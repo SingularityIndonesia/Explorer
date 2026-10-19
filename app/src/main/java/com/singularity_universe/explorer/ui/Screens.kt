@@ -161,6 +161,13 @@ private fun Breadcrumbs(vm: ExplorerViewModel, root: String, path: String) {
             .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Where this folder lives: a server or this phone.
+        Icon(
+            if (vm.repo.isSsh(path)) Icons.Outlined.Dns else Icons.Outlined.Smartphone,
+            contentDescription = if (vm.repo.isSsh(path)) "Server" else "This phone",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 8.dp, end = 2.dp).size(18.dp),
+        )
         segments.forEachIndexed { index, (name, segmentPath) ->
             val last = index == segments.lastIndex
             Text(

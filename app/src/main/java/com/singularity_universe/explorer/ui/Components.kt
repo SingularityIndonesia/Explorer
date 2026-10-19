@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +32,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Android
 import androidx.compose.material.icons.outlined.Audiotrack
@@ -346,12 +348,27 @@ fun NameDialog(
 }
 
 @Composable
-fun DeleteDialog(count: Int, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+fun DeleteDialog(count: Int, permanentCount: Int = count, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    val items = if (count == 1) "1 item" else "$count items"
+    val (title, text, action) = when (permanentCount) {
+        0 -> Triple(
+            "Move $items to Trash?",
+            "You can restore ${if (count == 1) "it" else "them"} from Trash for 30 days.",
+            "Move to Trash",
+        )
+        count -> Triple("Delete $items?", "This can't be undone.", "Delete")
+        else -> Triple(
+            "Delete $items?",
+            "$permanentCount of them can't go to Trash (on a server, in Android/data or on an SD card) and " +
+                "will be deleted for good. The rest move to Trash.",
+            "Delete",
+        )
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (count == 1) "Delete 1 item?" else "Delete $count items?") },
-        text = { Text("This can't be undone.") },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Delete") } },
+        title = { Text(title) },
+        text = { Text(text) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(action) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
@@ -381,5 +398,26 @@ private fun InfoLine(label: String, value: String) {
     Column {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** A folder icon; folders on an SSH server get a small server badge so they stand out from local ones. */
+@Composable
+fun FolderIcon(onServer: Boolean, modifier: Modifier = Modifier) {
+    Box(modifier.size(24.dp)) {
+        Icon(Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.fillMaxSize())
+        if (onServer) {
+            Icon(
+                Icons.Filled.Dns,
+                contentDescription = "On a server",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 4.dp, y = 4.dp)
+                    .size(14.dp)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow, CircleShape)
+                    .padding(1.5.dp),
+            )
+        }
     }
 }

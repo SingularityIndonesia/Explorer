@@ -214,20 +214,20 @@ fun FileListScreen(
             onRefresh = { onRefresh?.invoke() },
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
-            when {
-                shown == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                else -> FileCollection(
-                    items = shown,
-                    grid = vm.gridView,
-                    selected = selected,
-                    starred = vm.starred,
-                    header = header,
-                    emptyText = emptyText,
-                    highlightPath = highlightPath,
-                    onClick = ::open,
-                    onLongClick = ::toggle,
-                )
-            }
+            // The header (breadcrumbs, filters) stays put while a folder loads; only the
+            // content area below it shows the spinner.
+            FileCollection(
+                items = shown.orEmpty(),
+                loading = shown == null,
+                grid = vm.gridView,
+                selected = selected,
+                starred = vm.starred,
+                header = header,
+                emptyText = emptyText,
+                highlightPath = highlightPath,
+                onClick = ::open,
+                onLongClick = ::toggle,
+            )
             if (vm.busy) CircularProgressIndicator(Modifier.align(Alignment.Center))
         }
     }
@@ -239,7 +239,11 @@ fun FileListScreen(
         }
     }
     if (showDelete) {
-        DeleteDialog(selected.size, onDismiss = { showDelete = false }) {
+        DeleteDialog(
+            count = selected.size,
+            permanentCount = selected.count { !vm.repo.canTrash(it) },
+            onDismiss = { showDelete = false },
+        ) {
             vm.delete(selected)
             selected = emptySet()
             showDelete = false
@@ -264,6 +268,7 @@ fun FileListScreen(
 @Composable
 private fun FileCollection(
     items: List<FileItem>,
+    loading: Boolean,
     grid: Boolean,
     selected: Set<String>,
     starred: Set<String>,
@@ -296,7 +301,8 @@ private fun FileCollection(
             modifier = Modifier.fillMaxSize(),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) { header() }
-            if (items.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Empty(emptyText) }
+            if (loading) item(span = { GridItemSpan(maxLineSpan) }) { Loading() }
+            else if (items.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Empty(emptyText) }
             items(items, key = { it.path }) { item ->
                 FileGridCell(
                     item, item.path in selected, item.path in starred, { onClick(item) }, { onLongClick(item) },
@@ -307,7 +313,8 @@ private fun FileCollection(
     } else {
         LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
             item { header() }
-            if (items.isEmpty()) item { Empty(emptyText) }
+            if (loading) item { Loading() }
+            else if (items.isEmpty()) item { Empty(emptyText) }
             items(items, key = { it.path }) { item ->
                 FileRow(
                     item, item.path in selected, item.path in starred, { onClick(item) }, { onLongClick(item) },
@@ -315,6 +322,13 @@ private fun FileCollection(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun Loading() {
+    Box(Modifier.fillMaxWidth().padding(top = 96.dp), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator()
     }
 }
 

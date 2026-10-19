@@ -19,7 +19,6 @@ import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.PhonelinkLock
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -62,6 +61,7 @@ fun SettingsScreen(vm: ExplorerViewModel) {
     val ssh = LocalSshConnections.current
     // null = closed; a host with an empty id = adding a new server.
     var editing by remember { mutableStateOf<SshHost?>(null) }
+    var pickingShortcut by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -115,18 +115,11 @@ fun SettingsScreen(vm: ExplorerViewModel) {
             }
 
             Section("Folder shortcuts") {
-                if (vm.shortcuts.isEmpty()) {
-                    SettingsRow(
-                        title = "No shortcuts yet",
-                        subtitle = "Open a folder, then choose \"Add to drawer\" from its ⋮ menu.",
-                        leading = { Icon(Icons.Outlined.Folder, null) },
-                    )
-                }
                 vm.shortcuts.forEach { path ->
                     SettingsRow(
                         title = shortcutName(vm, path),
-                        subtitle = path,
-                        leading = { Icon(Icons.Outlined.Folder, null) },
+                        subtitle = vm.displayLocation(path),
+                        leading = { FolderIcon(onServer = vm.repo.isSsh(path)) },
                         trailing = {
                             IconButton(onClick = { vm.toggleShortcut(path) }) {
                                 Icon(Icons.Outlined.BookmarkRemove, "Remove shortcut")
@@ -135,6 +128,12 @@ fun SettingsScreen(vm: ExplorerViewModel) {
                         onClick = { vm.navigate(Route.Folder(path)) },
                     )
                 }
+                SettingsRow(
+                    title = "Add shortcut",
+                    subtitle = "Pin a folder from this phone or a server to the drawer",
+                    leading = { Icon(Icons.Outlined.Add, null) },
+                    onClick = { pickingShortcut = true },
+                )
             }
 
             Section("Browsing") {
@@ -147,6 +146,18 @@ fun SettingsScreen(vm: ExplorerViewModel) {
                 )
             }
         }
+    }
+
+    if (pickingShortcut) {
+        FolderPickerDialog(
+            vm = vm,
+            exclude = vm.shortcuts,
+            onDismiss = { pickingShortcut = false },
+            onPick = {
+                vm.addShortcut(it)
+                pickingShortcut = false
+            },
+        )
     }
 
     editing?.let { host ->

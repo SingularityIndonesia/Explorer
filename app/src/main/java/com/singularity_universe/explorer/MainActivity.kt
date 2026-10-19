@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Info
@@ -54,6 +55,7 @@ import com.singularity_universe.explorer.remote.SshConnections
 import com.singularity_universe.explorer.ui.AboutScreen
 import com.singularity_universe.explorer.ui.CategoryScreen
 import com.singularity_universe.explorer.ui.ExplorerViewModel
+import com.singularity_universe.explorer.ui.FolderIcon
 import com.singularity_universe.explorer.ui.FolderScreen
 import com.singularity_universe.explorer.ui.HomeScreen
 import com.singularity_universe.explorer.ui.LocalRemoteConnection
@@ -67,6 +69,7 @@ import com.singularity_universe.explorer.ui.Route
 import com.singularity_universe.explorer.ui.SearchScreen
 import com.singularity_universe.explorer.ui.SettingsScreen
 import com.singularity_universe.explorer.ui.StarredScreen
+import com.singularity_universe.explorer.ui.TrashScreen
 import com.singularity_universe.explorer.ui.theme.ExplorerTheme
 import kotlinx.coroutines.launch
 
@@ -177,6 +180,7 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
                     DrawerItem("Browse", Icons.Outlined.Folder) { go(vm::goHome) }
                     DrawerItem("Recents", Icons.Outlined.Schedule) { go { vm.goHome(); vm.navigate(Route.Recents) } }
                     DrawerItem("Starred", Icons.Outlined.StarBorder) { go { vm.goHome(); vm.navigate(Route.Starred) } }
+                    DrawerItem("Trash", Icons.Outlined.Delete) { go { vm.goHome(); vm.navigate(Route.Trash) } }
                     if (ssh.hosts.isNotEmpty()) {
                         HorizontalDivider(Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
                         DrawerSectionTitle("Servers")
@@ -204,9 +208,13 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
                         HorizontalDivider(Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
                         DrawerSectionTitle("Shortcuts")
                         vm.shortcuts.forEach { path ->
-                            DrawerItem(shortcutName(vm, path), Icons.Outlined.Folder) {
-                                go { vm.goHome(); vm.navigate(Route.Folder(path)) }
-                            }
+                            NavigationDrawerItem(
+                                label = { Text(shortcutName(vm, path), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                icon = { FolderIcon(onServer = vm.repo.isSsh(path)) },
+                                selected = false,
+                                onClick = { go { vm.goHome(); vm.navigate(Route.Folder(path)) } },
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                            )
                         }
                     }
                 }
@@ -245,6 +253,7 @@ private fun Screen(vm: ExplorerViewModel, route: Route, onOpenDrawer: () -> Unit
                     Route.About -> AboutScreen(vm)
                     Route.Remote -> RemoteScreen(vm)
                     Route.Settings -> SettingsScreen(vm)
+                    Route.Trash -> TrashScreen(vm)
                     is Route.Folder -> FolderScreen(vm, route.path, route.highlight)
                     is Route.CategoryFiles -> CategoryScreen(vm, route.category)
                     is Route.Viewer -> MediaViewerScreen(vm, route.items, route.index)

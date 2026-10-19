@@ -163,7 +163,11 @@ fun HomeScreen(vm: ExplorerViewModel, onOpenDrawer: () -> Unit) {
     }
 
     deleteTarget?.let { target ->
-        DeleteDialog(1, onDismiss = { deleteTarget = null }) {
+        DeleteDialog(
+            count = 1,
+            permanentCount = if (vm.repo.canTrash(target.path)) 0 else 1,
+            onDismiss = { deleteTarget = null },
+        ) {
             vm.delete(listOf(target.path))
             deleteTarget = null
         }

@@ -44,6 +44,7 @@ sealed interface Route {
     data object About : Route
     data object Remote : Route
     data object Settings : Route
+    data object Trash : Route
     /** [highlight] is a file inside the folder to scroll to and flash, e.g. after "Open with". */
     data class Folder(val path: String, val highlight: String? = null) : Route
     data class CategoryFiles(val category: Category) : Route
@@ -81,6 +82,8 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         repo.showHidden = showHidden
+        // Like Google Files: items stay in Trash for 30 days.
+        viewModelScope.launch { runCatching { repo.purgeExpiredTrash() } }
     }
 
     var sortOrder by mutableStateOf(
@@ -164,6 +167,12 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         return if (ssh.path == "/") sshConnections?.host(ssh.hostId)?.name ?: "Server" else ssh.name
     }
 
+    /** Where a folder is, for subtitles: its path, or "Server name · /path" on an SSH server. */
+    fun displayLocation(path: String): String {
+        val ssh = SshPath.parse(path) ?: return path
+        return "${sshConnections?.host(ssh.hostId)?.name ?: "Server"} · ${ssh.path}"
+    }
+
     /** Copies a file out of Android/data so another app can open it, then hands it to [open]. */
     fun openRestricted(item: FileItem, open: (FileItem) -> Unit) {
         viewModelScope.launch {
@@ -180,6 +189,10 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- Drawer shortcuts ----
+
+    fun addShortcut(path: String) {
+        if (path !in shortcuts) toggleShortcut(path)
+    }
 
     fun toggleShortcut(path: String) {
         val added = path !in shortcuts
@@ -209,6 +222,7 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
             Category.entries.map { async { it to repo.categorySize(it) } }.awaitAll().toMap()
         }
     }
+    fun trash() = resource("trash") { repo.trashItems() }
     fun starredFiles() = resource("starred") {
         withContext(Dispatchers.IO) { starred.map(::File).filter { it.exists() }.map { it.toFileItem() } }
     }
@@ -299,8 +313,30 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun delete(paths: Collection<String>) = runOperation("Deleted ${plural(paths.size)}") {
-        repo.delete(paths)
+    /** Phone files go to Trash; files on servers, in Android/data or on SD cards are deleted for good. */
+    fun delete(paths: Collection<String>) {
+        val (toTrash, permanent) = paths.partition(repo::canTrash)
+        val summary = when {
+            permanent.isEmpty() -> "Moved ${plural(toTrash.size)} to Trash"
+            toTrash.isEmpty() -> "Deleted ${plural(permanent.size)}"
+            else -> "Moved ${plural(toTrash.size)} to Trash, deleted ${plural(permanent.size)}"
+        }
+        runOperation(summary) {
+            if (toTrash.isNotEmpty()) repo.moveToTrash(toTrash)
+            if (permanent.isNotEmpty()) repo.delete(permanent)
+            forgetStarred(paths)
+        }
+    }
+
+    fun restoreFromTrash(ids: Collection<String>) =
+        runOperation("Restored ${plural(ids.size)}") { repo.restoreFromTrash(ids) }
+
+    fun deleteFromTrash(ids: Collection<String>) =
+        runOperation("Deleted ${plural(ids.size)} for good") { repo.deleteFromTrash(ids) }
+
+    fun emptyTrash() = runOperation("Trash emptied") { repo.emptyTrash() }
+
+    private fun forgetStarred(paths: Collection<String>) {
         if (paths.any { it in starred }) {
             starred = starred - paths.toSet()
             prefs.edit().putStringSet(KEY_STARRED, starred).apply()

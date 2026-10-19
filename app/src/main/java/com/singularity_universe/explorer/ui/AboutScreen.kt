@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,7 +29,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -103,6 +102,13 @@ fun AboutScreen(vm: ExplorerViewModel) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
             )
         },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { vm.navigate(Route.Settings) },
+                icon = { Icon(Icons.Outlined.Settings, null) },
+                text = { Text("Settings") },
+            )
+        },
     ) { padding ->
         Column(
             Modifier
@@ -133,13 +139,7 @@ fun AboutScreen(vm: ExplorerViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(20.dp))
-            FilledTonalButton(onClick = { vm.navigate(Route.Settings) }) {
-                Icon(Icons.Outlined.Settings, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Settings")
-            }
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(32.dp))
 
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainer,
@@ -154,6 +154,8 @@ fun AboutScreen(vm: ExplorerViewModel) {
                     AboutRow(Icons.Outlined.Gavel, "License", "MIT License") { showLicense = true }
                 }
             }
+            // Room to scroll the last row clear of the Settings button.
+            Spacer(Modifier.height(88.dp))
         }
     }
 

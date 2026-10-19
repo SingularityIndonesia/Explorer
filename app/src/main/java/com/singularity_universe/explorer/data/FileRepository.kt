@@ -26,6 +26,8 @@ class FileRepository(private val context: Context) {
 
     private val filesUri = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
 
+    val trash = Trash(rootDir)
+
     /** When false, MediaStore results skip dot-files and anything inside a dot-folder. */
     @Volatile
     var showHidden = false
@@ -191,6 +193,32 @@ class FileRepository(private val context: Context) {
         if (!src.renameTo(dst)) throw IOException("Couldn't rename")
         scan(scanTargets + filesUnder(dst))
     }
+
+    /**
+     * Whether deleting [path] moves it to Trash. Only internal storage qualifies: servers,
+     * Android/data and SD cards can't be moved into the trash folder cheaply.
+     */
+    fun canTrash(path: String): Boolean =
+        path.startsWith(rootDir.path + "/") && !isRestricted(path) && !trash.isInside(path)
+
+    suspend fun moveToTrash(paths: Collection<String>): Unit = withContext(Dispatchers.IO) {
+        val scanTargets = paths.flatMap { filesUnder(File(it)) }
+        trash.moveIn(paths)
+        scan(scanTargets)
+    }
+
+    suspend fun trashItems(): List<TrashItem> = withContext(Dispatchers.IO) { trash.items() }
+
+    suspend fun restoreFromTrash(ids: Collection<String>): Unit = withContext(Dispatchers.IO) {
+        val restored = trash.restore(ids)
+        scan(restored.flatMap { filesUnder(File(it)) })
+    }
+
+    suspend fun deleteFromTrash(ids: Collection<String>): Unit = withContext(Dispatchers.IO) { trash.deleteForever(ids) }
+
+    suspend fun emptyTrash(): Unit = withContext(Dispatchers.IO) { trash.empty() }
+
+    suspend fun purgeExpiredTrash(): Unit = withContext(Dispatchers.IO) { trash.purgeExpired() }
 
     suspend fun delete(paths: Collection<String>): Unit = withContext(Dispatchers.IO) {
         val (onServers, onDevice) = paths.partition(::isSsh)
