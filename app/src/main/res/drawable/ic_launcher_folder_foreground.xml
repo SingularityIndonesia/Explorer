@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Folder artwork inset into the adaptive-icon safe zone (the 108dp canvas shows only the
+     middle 72dp). 22% per side makes the folder ~47dp wide, matching other launcher glyphs. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+        android:drawable="@drawable/folder_orange_f58627"
+        android:insetLeft="22%"
+        android:insetRight="22%"
+        android:insetTop="21%"
+        android:insetBottom="23%"/>
