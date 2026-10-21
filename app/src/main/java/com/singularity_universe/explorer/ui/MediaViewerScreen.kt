@@ -7,8 +7,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -49,7 +48,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,6 +56,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -80,25 +79,35 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
     val pagerState = rememberPagerState(initialPage = startIndex) { items.size }
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
     ImmersiveSystemBars(visible = chromeVisible)
+    // One zoom per page; while the current page is zoomed, drags pan it instead of swiping pages.
+    val zoomStates = remember { mutableStateMapOf<Int, ZoomState>() }
+    val currentZoomed = zoomStates[pagerState.currentPage]?.isZoomed == true
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
             state = pagerState,
             key = { items[it].path },
             beyondViewportPageCount = 1,
+            userScrollEnabled = !currentZoomed,
             modifier = Modifier.fillMaxSize(),
         ) { page ->
             val item = items[page]
+            val zoom = zoomStates.getOrPut(page) { ZoomState() }
+            // Coming back to a page shows it unzoomed.
+            LaunchedEffect(pagerState.settledPage) {
+                if (pagerState.settledPage != page) zoom.reset()
+            }
             if (item.kind == FileKind.Video) {
                 VideoPage(
                     item = item,
+                    zoom = zoom,
                     isCurrent = pagerState.settledPage == page,
                     controlsVisible = chromeVisible,
                     onToggleControls = { chromeVisible = !chromeVisible },
                     onHideControls = { chromeVisible = false },
                 )
             } else {
-                ImagePage(item, onTap = { chromeVisible = !chromeVisible })
+                ImagePage(item, zoom, onTap = { chromeVisible = !chromeVisible })
             }
         }
 
@@ -137,11 +146,12 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
 }
 
 @Composable
-private fun ImagePage(item: FileItem, onTap: () -> Unit) {
+private fun ImagePage(item: FileItem, zoom: ZoomState, onTap: () -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
-            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onTap),
+            .zoomable(zoom, onTap)
+            .zoomed(zoom),
     ) {
         // The cached thumbnail shows instantly while the full-resolution image decodes on top.
         AsyncImage(
@@ -163,6 +173,7 @@ private fun ImagePage(item: FileItem, onTap: () -> Unit) {
 @Composable
 private fun VideoPage(
     item: FileItem,
+    zoom: ZoomState,
     isCurrent: Boolean,
     controlsVisible: Boolean,
     onToggleControls: () -> Unit,
@@ -170,11 +181,11 @@ private fun VideoPage(
 ) {
     val tapModifier = Modifier
         .fillMaxSize()
-        .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onToggleControls)
+        .zoomable(zoom, onToggleControls)
     if (!isCurrent) {
         // Neighbouring pages only show a still; the player is created once the page settles.
         Box(tapModifier, contentAlignment = Alignment.Center) {
-            AsyncImage(item.thumbnail(512), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            AsyncImage(item.thumbnail(512), null, Modifier.fillMaxSize().zoomed(zoom), contentScale = ContentScale.Fit)
             Icon(Icons.Outlined.PlayCircle, null, Modifier.size(72.dp), tint = Color.White)
         }
         return
@@ -229,15 +240,18 @@ private fun VideoPage(
 
     val presentation = rememberPresentationState(player)
     Box(tapModifier) {
-        PlayerSurface(
-            player = player,
-            surfaceType = SURFACE_TYPE_TEXTURE_VIEW,
-            modifier = Modifier
-                .resizeWithContentScale(ContentScale.Fit, presentation.videoSizeDp)
-                .align(Alignment.Center),
-        )
-        if (presentation.coverSurface) {
-            AsyncImage(item.thumbnail(512), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        // Only the picture zooms; the controls below stay where they are.
+        Box(Modifier.fillMaxSize().zoomed(zoom)) {
+            PlayerSurface(
+                player = player,
+                surfaceType = SURFACE_TYPE_TEXTURE_VIEW,
+                modifier = Modifier
+                    .resizeWithContentScale(ContentScale.Fit, presentation.videoSizeDp)
+                    .align(Alignment.Center),
+            )
+            if (presentation.coverSurface) {
+                AsyncImage(item.thumbnail(512), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            }
         }
 
         AnimatedVisibility(
