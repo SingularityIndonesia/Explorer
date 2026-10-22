@@ -16,3 +16,7 @@ local.properties
 .kotlin
 /.claude/settings.local.json
 /.idea/deploymentTargetSelector.xml
+
+# JVM crash dumps
+hs_err_pid*.log
+replay_pid*.log
