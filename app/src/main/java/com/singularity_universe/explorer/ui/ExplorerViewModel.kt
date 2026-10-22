@@ -18,6 +18,9 @@ import com.singularity_universe.explorer.data.SortOrder
 import com.singularity_universe.explorer.data.isPreviewable
 import com.singularity_universe.explorer.data.resolveFilePath
 import com.singularity_universe.explorer.data.toFileItem
+import com.singularity_universe.explorer.remote.AdbDevices
+import com.singularity_universe.explorer.remote.AdbFiles
+import com.singularity_universe.explorer.remote.AdbPath
 import com.singularity_universe.explorer.remote.RemoteConnection
 import com.singularity_universe.explorer.remote.RemoteFiles
 import com.singularity_universe.explorer.remote.SshConnections
@@ -160,16 +163,49 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Name for a folder in titles and shortcuts: "Internal storage", a server's name, or the folder name. */
+    private var adbDevices: AdbDevices? = null
+
+    /** Receives the activity-owned Android device connections (a process-wide singleton). */
+    fun attachAdb(devices: AdbDevices) {
+        if (adbDevices === devices) return
+        adbDevices = devices
+        repo.adb = AdbFiles(devices)
+    }
+
+    /** Opens another Android device at its internal storage (connecting on first use). */
+    fun openDevice(deviceId: String) = navigate(Route.Folder(AdbPath(deviceId, AdbPath.START).toString()))
+
+    /**
+     * Name for a folder in titles and shortcuts: "Internal storage", a server's or device's name
+     * for its top folder, or the folder name.
+     */
     fun displayName(path: String): String {
         if (path == repo.rootDir.path) return "Internal storage"
-        val ssh = SshPath.parse(path) ?: return File(path).name
-        return if (ssh.path == "/") sshConnections?.host(ssh.hostId)?.name ?: "Server" else ssh.name
+        SshPath.parse(path)?.let { ssh ->
+            return if (ssh.path == "/") sshConnections?.host(ssh.hostId)?.name ?: "Server" else ssh.name
+        }
+        AdbPath.parse(path)?.let { adb ->
+            return if (adb.path == "/" || adb.path == AdbPath.START) adbDevices?.device(adb.deviceId)?.name ?: "Device"
+            else adb.name
+        }
+        return File(path).name
+    }
+
+    /** Where breadcrumbs start: internal storage, "/" on a server, or a device's internal storage. */
+    fun breadcrumbRoot(path: String): String {
+        SshPath.parse(path)?.let { return "${SshPath.SCHEME}${it.hostId}" }
+        AdbPath.parse(path)?.let {
+            val start = AdbPath(it.deviceId, AdbPath.START)
+            return if (it.path.startsWith(AdbPath.START)) start.toString() else "${AdbPath.SCHEME}${it.deviceId}"
+        }
+        return repo.rootDir.path
     }
 
     /** The folder containing [path], on this phone or on an SSH server. */
     fun parentOf(path: String): String =
-        SshPath.parse(path)?.let { SshPath(it.hostId, it.parent).toString() } ?: File(path).parent ?: repo.rootDir.path
+        SshPath.parse(path)?.let { SshPath(it.hostId, it.parent).toString() }
+            ?: AdbPath.parse(path)?.let { AdbPath(it.deviceId, it.parent).toString() }
+            ?: File(path).parent ?: repo.rootDir.path
 
     /** Opens the folder containing [item], scrolled to it and highlighted. */
     fun locate(item: FileItem) = navigate(Route.Folder(parentOf(item.path), highlight = item.path))
@@ -183,8 +219,9 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Where a folder is, for subtitles: its path, or "Server name · /path" on an SSH server. */
     fun displayLocation(path: String): String {
-        val ssh = SshPath.parse(path) ?: return path
-        return "${sshConnections?.host(ssh.hostId)?.name ?: "Server"} · ${ssh.path}"
+        SshPath.parse(path)?.let { return "${sshConnections?.host(it.hostId)?.name ?: "Server"} · ${it.path}" }
+        AdbPath.parse(path)?.let { return "${adbDevices?.device(it.deviceId)?.name ?: "Device"} · ${it.path}" }
+        return path
     }
 
     /** Copies a file out of Android/data so another app can open it, then hands it to [open]. */

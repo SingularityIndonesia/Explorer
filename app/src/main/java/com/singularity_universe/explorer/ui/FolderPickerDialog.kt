@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.TabletAndroid
@@ -43,6 +44,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.singularity_universe.explorer.data.FileItem
+import com.singularity_universe.explorer.remote.AdbPath
 import com.singularity_universe.explorer.remote.SshPath
 import java.io.File
 import kotlinx.coroutines.launch
@@ -59,6 +61,7 @@ fun FolderPickerDialog(
     onPick: (String) -> Unit,
 ) {
     val ssh = LocalSshConnections.current
+    val adb = LocalAdbDevices.current
     val scope = rememberCoroutineScope()
     val localRoot = vm.repo.rootDir.path
     var path by remember { mutableStateOf(localRoot) }
@@ -78,9 +81,11 @@ fun FolderPickerDialog(
         }
     }
 
-    val parent: String? = SshPath.parse(path)
-        ?.let { if (it.path == "/") null else SshPath(it.hostId, it.parent).toString() }
-        ?: path.takeIf { it != localRoot && it.startsWith(localRoot) }?.let { File(it).parent }
+    val parent: String? = when {
+        SshPath.parse(path) != null -> SshPath.parse(path)!!.let { if (it.path == "/") null else SshPath(it.hostId, it.parent).toString() }
+        AdbPath.parse(path) != null -> AdbPath.parse(path)!!.let { if (it.path == "/") null else AdbPath(it.deviceId, it.parent).toString() }
+        else -> path.takeIf { it != localRoot && it.startsWith(localRoot) }?.let { File(it).parent }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -104,7 +109,7 @@ fun FolderPickerDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     FilterChip(
-                        selected = SshPath.parse(path) == null,
+                        selected = !vm.repo.isRemote(path),
                         onClick = { path = localRoot },
                         label = { Text("Internal storage") },
                         leadingIcon = { Icon(Icons.Outlined.TabletAndroid, null, Modifier.size(18.dp)) },
@@ -123,6 +128,14 @@ fun FolderPickerDialog(
                             },
                             label = { Text(host.name) },
                             leadingIcon = { Icon(Icons.Outlined.Dns, null, Modifier.size(18.dp)) },
+                        )
+                    }
+                    adb.devices.forEach { device ->
+                        FilterChip(
+                            selected = AdbPath.parse(path)?.deviceId == device.id,
+                            onClick = { path = AdbPath(device.id, AdbPath.START).toString() },
+                            label = { Text(device.name) },
+                            leadingIcon = { Icon(Icons.Outlined.Devices, null, Modifier.size(18.dp)) },
                         )
                     }
                 }

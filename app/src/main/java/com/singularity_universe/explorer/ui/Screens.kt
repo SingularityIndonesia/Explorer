@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.SdStorage
@@ -77,7 +78,6 @@ import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.toFileItem
 import com.singularity_universe.explorer.remote.RemoteAccessRequiredException
 import com.singularity_universe.explorer.remote.RemoteConnection
-import com.singularity_universe.explorer.remote.SshPath
 import java.io.File
 import java.time.Instant
 import java.time.YearMonth
@@ -91,7 +91,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun FolderScreen(vm: ExplorerViewModel, path: String, highlight: String? = null) {
     // Breadcrumbs start at the storage root, or at "/" on an SSH server.
-    val root = SshPath.parse(path)?.let { "${SshPath.SCHEME}${it.hostId}" } ?: vm.repo.rootDir.path
+    val root = vm.breadcrumbRoot(path)
     val data = vm.folder(path).observe()
     val error = data.error
     val needsRemote = error is RemoteAccessRequiredException
@@ -168,8 +168,16 @@ private fun Breadcrumbs(vm: ExplorerViewModel, root: String, path: String) {
     ) {
         // Where this folder lives: a server or this phone.
         Icon(
-            if (vm.repo.isSsh(path)) Icons.Outlined.Dns else Icons.Outlined.Smartphone,
-            contentDescription = if (vm.repo.isSsh(path)) "Server" else "This phone",
+            when {
+                vm.repo.isSsh(path) -> Icons.Outlined.Dns
+                vm.repo.isAdbDevice(path) -> Icons.Outlined.Devices
+                else -> Icons.Outlined.Smartphone
+            },
+            contentDescription = when {
+                vm.repo.isSsh(path) -> "Server"
+                vm.repo.isAdbDevice(path) -> "Android device"
+                else -> "This phone"
+            },
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 8.dp, end = 2.dp).size(18.dp),
         )
@@ -422,6 +430,7 @@ private fun AppIcon(packageName: String) {
 fun OtherStorageScreen(vm: ExplorerViewModel) {
     val context = LocalContext.current
     val ssh = LocalSshConnections.current
+    val adb = LocalAdbDevices.current
     val volumes = remember {
         context.getSystemService(StorageManager::class.java).storageVolumes
             .mapNotNull { volume -> volume.directory?.let { volume to it } }
@@ -460,7 +469,7 @@ fun OtherStorageScreen(vm: ExplorerViewModel) {
             }
             item {
                 Text(
-                    "SSH servers",
+                    "Servers and devices",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
@@ -469,8 +478,11 @@ fun OtherStorageScreen(vm: ExplorerViewModel) {
             items(ssh.hosts, key = { it.id }) { host ->
                 StorageRow(Icons.Outlined.Dns, host.name, host.address) { vm.openServer(host.id) }
             }
+            items(adb.devices, key = { it.id }) { device ->
+                StorageRow(Icons.Outlined.Devices, device.name, device.address) { vm.openDevice(device.id) }
+            }
             item {
-                StorageRow(Icons.Outlined.Add, "Add SSH server", "Manage servers in Settings") {
+                StorageRow(Icons.Outlined.Add, "Add SSH server or Android device", "Manage them in Settings") {
                     vm.navigate(Route.Settings)
                 }
             }

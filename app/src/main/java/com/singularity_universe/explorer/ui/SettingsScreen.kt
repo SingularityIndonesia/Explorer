@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PhonelinkLock
@@ -41,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,10 +51,13 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.singularity_universe.explorer.remote.AdbDevice
+import com.singularity_universe.explorer.remote.AdbDevices
 import com.singularity_universe.explorer.remote.RemoteConnection.Status
 import com.singularity_universe.explorer.remote.SshConnections
 import com.singularity_universe.explorer.remote.SshHost
 import com.singularity_universe.explorer.shortcutName
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +67,9 @@ fun SettingsScreen(vm: ExplorerViewModel) {
     // null = closed; a host with an empty id = adding a new server.
     var editing by remember { mutableStateOf<SshHost?>(null) }
     var pickingShortcut by remember { mutableStateOf(false) }
+    val adb = LocalAdbDevices.current
+    var editingDevice by remember { mutableStateOf<AdbDevice?>(null) }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -106,11 +114,31 @@ fun SettingsScreen(vm: ExplorerViewModel) {
                         onClick = { vm.openServer(host.id) },
                     )
                 }
+                adb.devices.forEach { device ->
+                    SettingsRow(
+                        title = device.name,
+                        subtitle = "Android device · ${device.address} · ${adb.status[device.id].label()}",
+                        leading = { Icon(Icons.Outlined.Devices, null) },
+                        trailing = {
+                            OverflowMenu {
+                                item("Edit / pair", Icons.Outlined.Edit) { editingDevice = device }
+                                item("Remove", Icons.Outlined.Delete) { adb.remove(device.id) }
+                            }
+                        },
+                        onClick = { vm.openDevice(device.id) },
+                    )
+                }
                 SettingsRow(
                     title = "Add SSH server",
                     subtitle = "Browse a computer or NAS over SSH (SFTP)",
                     leading = { Icon(Icons.Outlined.Add, null) },
                     onClick = { editing = SshHost("", "", "", 22, "", "") },
+                )
+                SettingsRow(
+                    title = "Add Android device",
+                    subtitle = "Browse another phone, tablet or TV over its Wireless debugging",
+                    leading = { Icon(Icons.Outlined.Add, null) },
+                    onClick = { editingDevice = AdbDevice("", "", "", 0) },
                 )
             }
 
@@ -119,7 +147,7 @@ fun SettingsScreen(vm: ExplorerViewModel) {
                     SettingsRow(
                         title = shortcutName(vm, path),
                         subtitle = vm.displayLocation(path),
-                        leading = { FolderIcon(onServer = vm.repo.isSsh(path)) },
+                        leading = { FolderIcon(onServer = vm.repo.isRemote(path)) },
                         trailing = {
                             IconButton(onClick = { vm.toggleShortcut(path) }) {
                                 Icon(Icons.Outlined.BookmarkRemove, "Remove shortcut")
@@ -156,6 +184,24 @@ fun SettingsScreen(vm: ExplorerViewModel) {
             onPick = {
                 vm.addShortcut(it)
                 pickingShortcut = false
+            },
+        )
+    }
+
+    editingDevice?.let { device ->
+        AdbDeviceDialog(
+            initial = device,
+            onDismiss = { editingDevice = null },
+            onSave = { updated, pairingPort, code ->
+                val saved = adb.save(updated)
+                editingDevice = null
+                if (pairingPort != null && code.isNotBlank()) {
+                    scope.launch {
+                        adb.pair(saved.id, pairingPort, code)
+                            .onSuccess { vm.message("Paired with ${saved.name}") }
+                            .onFailure { vm.message(it.message ?: "Pairing failed") }
+                    }
+                }
             },
         )
     }
@@ -243,6 +289,70 @@ private fun SshServerDialog(initial: SshHost, onDismiss: () -> Unit, onSave: (Ss
 }
 
 @Composable
+private fun AdbDeviceDialog(
+    initial: AdbDevice,
+    onDismiss: () -> Unit,
+    onSave: (device: AdbDevice, pairingPort: Int?, pairingCode: String) -> Unit,
+) {
+    var name by remember { mutableStateOf(initial.name) }
+    var host by remember { mutableStateOf(initial.host) }
+    var port by remember { mutableStateOf(if (initial.port > 0) initial.port.toString() else "") }
+    var pairingCode by remember { mutableStateOf("") }
+    var pairingPort by remember { mutableStateOf("") }
+    val portNumber = port.toIntOrNull()?.takeIf { it in 1..65535 }
+    val pairingPortNumber = pairingPort.toIntOrNull()?.takeIf { it in 1..65535 }
+    // Pairing is optional (only the first time), but if started it needs both the code and its port.
+    val pairingValid = pairingCode.isBlank() || (pairingCode.length == 6 && pairingPortNumber != null)
+    val valid = host.isNotBlank() && portNumber != null && pairingValid
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial.id.isEmpty()) "Add Android device" else "Edit Android device") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "On the other device: Settings › Developer options › Wireless debugging.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                DialogField("Name (optional)", name) { name = it }
+                DialogField("IP address", host, KeyboardType.Uri) { host = it.trim() }
+                DialogField("Port (under \"IP address & Port\")", port, KeyboardType.Number) {
+                    port = it.filter(Char::isDigit).take(5)
+                }
+                Text(
+                    "First time only — tap \"Pair device with pairing code\" there:",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                DialogField("Pairing code", pairingCode, KeyboardType.Number) {
+                    pairingCode = it.filter(Char::isDigit).take(6)
+                }
+                DialogField("Pairing port (from the pairing dialog)", pairingPort, KeyboardType.Number) {
+                    pairingPort = it.filter(Char::isDigit).take(5)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = {
+                    onSave(
+                        initial.copy(name = name.trim().ifEmpty { host }, host = host, port = portNumber ?: 0),
+                        pairingPortNumber,
+                        pairingCode,
+                    )
+                },
+            ) { Text(if (pairingCode.isNotBlank()) "Pair & save" else "Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
 private fun DialogField(
     label: String,
     value: String,
@@ -257,6 +367,13 @@ private fun DialogField(
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+private fun AdbDevices.Status?.label(): String = when (this) {
+    null, AdbDevices.Status.Idle -> "Not connected"
+    AdbDevices.Status.Connecting -> "Connecting…"
+    AdbDevices.Status.Connected -> "Connected"
+    is AdbDevices.Status.Failed -> message
 }
 
 private fun SshConnections.Status?.label(): String = when (this) {

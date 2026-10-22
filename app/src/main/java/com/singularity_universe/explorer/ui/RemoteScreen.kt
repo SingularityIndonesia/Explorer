@@ -55,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.singularity_universe.explorer.remote.AdbDevices
 import com.singularity_universe.explorer.remote.PairingNotification
 import com.singularity_universe.explorer.remote.RemoteConnection
 import com.singularity_universe.explorer.remote.RemoteConnection.Status
@@ -64,6 +65,11 @@ import kotlinx.coroutines.launch
 /** The activity-owned [RemoteConnection], provided by MainActivity to every screen. */
 val LocalRemoteConnection = staticCompositionLocalOf<RemoteConnection> {
     error("RemoteConnection is provided by MainActivity")
+}
+
+/** The activity-owned [AdbDevices], provided by MainActivity to every screen. */
+val LocalAdbDevices = staticCompositionLocalOf<AdbDevices> {
+    error("AdbDevices is provided by MainActivity")
 }
 
 /** The activity-owned [SshConnections], provided by MainActivity to every screen. */

@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Info
@@ -48,8 +49,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.singularity_universe.explorer.remote.AdbDevices
 import com.singularity_universe.explorer.remote.RemoteConnection
 import com.singularity_universe.explorer.remote.SshConnections
 import com.singularity_universe.explorer.ui.AboutScreen
@@ -58,6 +61,7 @@ import com.singularity_universe.explorer.ui.ExplorerViewModel
 import com.singularity_universe.explorer.ui.FolderIcon
 import com.singularity_universe.explorer.ui.FolderScreen
 import com.singularity_universe.explorer.ui.HomeScreen
+import com.singularity_universe.explorer.ui.LocalAdbDevices
 import com.singularity_universe.explorer.ui.LocalRemoteConnection
 import com.singularity_universe.explorer.ui.LocalSshConnections
 import com.singularity_universe.explorer.ui.MediaViewerScreen
@@ -86,15 +90,24 @@ class MainActivity : ComponentActivity() {
     /** SSH servers: one reused session per server, owned the same way as [remote]. */
     private lateinit var ssh: SshConnections
 
+    /** Other Android devices: one reused ADB connection per device, owned the same way. */
+    private lateinit var devices: AdbDevices
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         remote = RemoteConnection.get(this)
         ssh = SshConnections.get(this)
+        devices = AdbDevices.get(this)
         vm.attachRemote(remote)
         vm.attachSsh(ssh)
+        vm.attachAdb(devices)
         setContent {
-            CompositionLocalProvider(LocalRemoteConnection provides remote, LocalSshConnections provides ssh) {
+            CompositionLocalProvider(
+                LocalRemoteConnection provides remote,
+                LocalSshConnections provides ssh,
+                LocalAdbDevices provides devices,
+            ) {
                 ExplorerTheme {
                     Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxSize()) {
                         if (vm.hasStorageAccess) ExplorerRoot(vm) else PermissionScreen()
@@ -123,11 +136,13 @@ class MainActivity : ComponentActivity() {
         if (granted != vm.hasStorageAccess) vm.hasStorageAccess = granted
         remote.onResume()
         ssh.onResume()
+        devices.onResume()
     }
 
     override fun onPause() {
         remote.onPause()
         ssh.onPause()
+        devices.onPause()
         super.onPause()
     }
 
@@ -136,6 +151,7 @@ class MainActivity : ComponentActivity() {
         if (isFinishing) {
             remote.close()
             ssh.close()
+            devices.close()
         }
         super.onDestroy()
     }
@@ -148,6 +164,7 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
     val snackbar = remember { SnackbarHostState() }
     val stateHolder = rememberSaveableStateHolder()
     val ssh = LocalSshConnections.current
+    val adbDevices = LocalAdbDevices.current
 
     LaunchedEffect(Unit) {
         vm.messages.collect {
@@ -181,27 +198,22 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
                     DrawerItem("Recents", Icons.Outlined.Schedule) { go { vm.goHome(); vm.navigate(Route.Recents) } }
                     DrawerItem("Starred", Icons.Outlined.StarBorder) { go { vm.goHome(); vm.navigate(Route.Starred) } }
                     DrawerItem("Trash", Icons.Outlined.Delete) { go { vm.goHome(); vm.navigate(Route.Trash) } }
-                    if (ssh.hosts.isNotEmpty()) {
+                    if (ssh.hosts.isNotEmpty() || adbDevices.devices.isNotEmpty()) {
                         HorizontalDivider(Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
                         DrawerSectionTitle("Servers")
                         ssh.hosts.forEach { host ->
-                            val connected = ssh.status[host.id] == SshConnections.Status.Connected
-                            NavigationDrawerItem(
-                                label = { Text(host.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                icon = { Icon(Icons.Outlined.Dns, null) },
-                                badge = {
-                                    if (connected) {
-                                        Text(
-                                            "Connected",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
-                                },
-                                selected = false,
-                                onClick = { go { vm.goHome(); vm.openServer(host.id) } },
-                                modifier = Modifier.padding(horizontal = 12.dp),
-                            )
+                            RemoteDrawerItem(
+                                name = host.name,
+                                icon = Icons.Outlined.Dns,
+                                connected = ssh.status[host.id] == SshConnections.Status.Connected,
+                            ) { go { vm.goHome(); vm.openServer(host.id) } }
+                        }
+                        adbDevices.devices.forEach { device ->
+                            RemoteDrawerItem(
+                                name = device.name,
+                                icon = Icons.Outlined.Devices,
+                                connected = adbDevices.status[device.id] == AdbDevices.Status.Connected,
+                            ) { go { vm.goHome(); vm.openDevice(device.id) } }
                         }
                     }
                     if (vm.shortcuts.isNotEmpty()) {
@@ -210,7 +222,7 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
                         vm.shortcuts.forEach { path ->
                             NavigationDrawerItem(
                                 label = { Text(shortcutName(vm, path), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                icon = { FolderIcon(onServer = vm.repo.isSsh(path)) },
+                                icon = { FolderIcon(onServer = vm.repo.isRemote(path)) },
                                 selected = false,
                                 onClick = { go { vm.goHome(); vm.navigate(Route.Folder(path)) } },
                                 modifier = Modifier.padding(horizontal = 12.dp),
@@ -263,6 +275,22 @@ private fun Screen(vm: ExplorerViewModel, route: Route, onOpenDrawer: () -> Unit
 internal fun shortcutName(vm: ExplorerViewModel, path: String): String = vm.displayName(path)
 
 @Composable
+private fun RemoteDrawerItem(name: String, icon: ImageVector, connected: Boolean, onClick: () -> Unit) {
+    NavigationDrawerItem(
+        label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        icon = { Icon(icon, null) },
+        badge = {
+            if (connected) {
+                Text("Connected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        selected = false,
+        onClick = onClick,
+        modifier = Modifier.padding(horizontal = 12.dp),
+    )
+}
+
+@Composable
 private fun DrawerSectionTitle(text: String) {
     Text(
         text,
@@ -273,7 +301,7 @@ private fun DrawerSectionTitle(text: String) {
 }
 
 @Composable
-private fun DrawerItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+private fun DrawerItem(label: String, icon: ImageVector, onClick: () -> Unit) {
     NavigationDrawerItem(
         label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         icon = { Icon(icon, null) },

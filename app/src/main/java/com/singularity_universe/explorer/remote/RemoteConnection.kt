@@ -6,7 +6,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.muntashirakon.adb.AdbPairingRequiredException
-import io.github.muntashirakon.adb.AdbStream
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -20,7 +19,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.net.InetAddress
@@ -224,59 +222,12 @@ class RemoteConnection private constructor(private val app: Context) {
 
     /** Runs a shell command as the `shell` user and returns its output and exit code. */
     suspend fun exec(command: String): ShellResult = withContext(Dispatchers.IO) {
-        val output = ByteArrayOutputStream()
-        openStream("shell:$command; echo; echo $EXIT_MARK\$?").use { stream ->
-            stream.readUntil(output) { exitMarker.containsMatchIn(it.tailString()) }
-        }
-        val text = String(output.toByteArray())
-        val match = exitMarker.findAll(text).lastOrNull()
-            ?: return@withContext ShellResult(text, -1)
-        ShellResult(text.substring(0, match.range.first).trimEnd('\n', '\r'), match.groupValues[1].toInt())
+        openStream(shellService(command)).use { it.readShellResult() }
     }
 
-    /** Streams a file's raw bytes into [destination] (binary-safe, unlike `shell:`). */
+    /** Copies a file into [destination] over ADB's sync protocol (binary-safe). */
     suspend fun pull(path: String, destination: File) = withContext(Dispatchers.IO) {
-        val size = exec("stat -c %s ${shellQuote(path)}").output.trim().toLongOrNull()
-            ?: throw IOException("Couldn't read ${File(path).name}")
-        destination.parentFile?.mkdirs()
-        destination.outputStream().buffered().use { out ->
-            if (size == 0L) return@use
-            var written = 0L
-            openStream("exec:cat ${shellQuote(path)}").use { stream ->
-                stream.readUntil(out, onChunk = { written += it }) { written >= size }
-            }
-            if (written < size) throw IOException("Couldn't read ${File(path).name}")
-        }
-    }
-
-    /**
-     * Reads until [done] says the expected data has arrived. libadb can miss the end-of-stream
-     * signal when adbd closes a stream that still has queued data (the reader then blocks forever),
-     * so callers stop on content they know to expect instead of waiting for EOF.
-     */
-    private fun <T : java.io.OutputStream> AdbStream.readUntil(
-        out: T,
-        onChunk: (Int) -> Unit = {},
-        done: (T) -> Boolean,
-    ) {
-        val input = openInputStream()
-        val buffer = ByteArray(64 * 1024)
-        while (true) {
-            val read = try {
-                input.read(buffer)
-            } catch (_: IOException) {
-                -1 // libadb reports a closed stream as "Stream closed." instead of EOF.
-            }
-            if (read < 0) break
-            out.write(buffer, 0, read)
-            onChunk(read)
-            if (done(out)) break
-        }
-    }
-
-    private fun ByteArrayOutputStream.tailString(): String {
-        val bytes = toByteArray()
-        return String(bytes, maxOf(0, bytes.size - 64), minOf(64, bytes.size))
+        openStream("sync:").use { it.syncRecv(path, destination) }
     }
 
     private suspend fun openStream(destination: String) = try {
@@ -300,8 +251,6 @@ class RemoteConnection private constructor(private val app: Context) {
         private const val TAG = "ExplorerRemote"
         private const val KEY_PAIRED = "paired"
         private const val KEY_AUTO = "auto_connect"
-        private const val EXIT_MARK = "__EXPLORER_EXIT__"
-        private val exitMarker = Regex("$EXIT_MARK(\\d+)\\r?\\n")
         private const val CONNECT_TIMEOUT_MS = 8_000L
         private const val PAIRING_DISCOVERY_TIMEOUT_MS = 10_000L
 

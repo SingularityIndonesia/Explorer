@@ -15,29 +15,9 @@ class RemoteFiles(private val connection: RemoteConnection) {
 
     suspend fun list(path: String, showHidden: Boolean): List<FileItem> {
         // One line per entry: type|size|mtime|full path (the path goes last, so it may contain '|').
-        val result = connection.exec(
-            "find ${shellQuote(path)} -mindepth 1 -maxdepth 1 -exec stat -c '%F|%s|%Y|%n' {} +"
-        )
+        val result = connection.exec(listCommand(path))
         if (!result.ok && result.output.isBlank()) throw IOException("Couldn't open this folder")
-        return result.output.lineSequence()
-            .mapNotNull { line ->
-                val parts = line.split('|', limit = 4)
-                if (parts.size < 4 || !parts[3].startsWith("/")) return@mapNotNull null
-                val fullPath = parts[3]
-                val name = fullPath.substringAfterLast('/')
-                val isDirectory = parts[0] == "directory"
-                FileItem(
-                    path = fullPath,
-                    name = name,
-                    isDirectory = isDirectory,
-                    size = if (isDirectory) 0L else parts[1].toLongOrNull() ?: 0L,
-                    lastModified = (parts[2].toLongOrNull() ?: 0L) * 1000,
-                    mimeType = if (isDirectory) "inode/directory" else mimeTypeOf(name),
-                    childCount = UNKNOWN_COUNT,
-                )
-            }
-            .filter { showHidden || !it.name.startsWith(".") }
-            .toList()
+        return parseStatListing(result.output, showHidden) { it }
     }
 
     suspend fun createFolder(path: String) =
@@ -92,5 +72,32 @@ class RemoteFiles(private val connection: RemoteConnection) {
 
         /** Folders Android blocks for every normal app, even with "All files access". */
         fun isRestricted(path: String): Boolean = restricted.containsMatchIn(path)
+
+        /** The `find`/`stat` command that lists a folder, one `type|size|mtime|path` line per entry. */
+        fun listCommand(path: String, followLinks: Boolean = false) =
+            "find ${shellQuote(path)} -mindepth 1 -maxdepth 1 -exec stat ${if (followLinks) "-L " else ""}-c '%F|%s|%Y|%n' {} +"
+
+        /** Parses [listCommand] output; [pathOf] turns a device path into the app's path for it. */
+        fun parseStatListing(output: String, showHidden: Boolean, pathOf: (String) -> String): List<FileItem> =
+            output.lineSequence()
+                .mapNotNull { line ->
+                    // type|size|mtime|full path — the path goes last, so it may contain '|'.
+                    val parts = line.split('|', limit = 4)
+                    if (parts.size < 4 || !parts[3].startsWith("/")) return@mapNotNull null
+                    val fullPath = parts[3]
+                    val name = fullPath.substringAfterLast('/')
+                    val isDirectory = parts[0] == "directory"
+                    FileItem(
+                        path = pathOf(fullPath),
+                        name = name,
+                        isDirectory = isDirectory,
+                        size = if (isDirectory) 0L else parts[1].toLongOrNull() ?: 0L,
+                        lastModified = (parts[2].toLongOrNull() ?: 0L) * 1000,
+                        mimeType = if (isDirectory) "inode/directory" else mimeTypeOf(name),
+                        childCount = UNKNOWN_COUNT,
+                    )
+                }
+                .filter { showHidden || !it.name.startsWith(".") }
+                .toList()
     }
 }
