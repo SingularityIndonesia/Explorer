@@ -67,11 +67,20 @@ class ZoomState {
 /**
  * Pinch to zoom, drag to pan while zoomed, double-tap to zoom in/out, single tap for [onTap].
  * While not zoomed, one-finger drags are left alone so the pager can still swipe.
+ * [onDoubleTap] gets the tap position and page size first; returning true skips the zoom
+ * (videos use it to seek when the sides are double-tapped). Pass a remembered lambda.
  */
-fun Modifier.zoomable(state: ZoomState, onTap: () -> Unit): Modifier = this
+fun Modifier.zoomable(
+    state: ZoomState,
+    onTap: () -> Unit,
+    onDoubleTap: (position: Offset, size: IntSize) -> Boolean = NoDoubleTapAction,
+): Modifier = this
     .onSizeChanged { state.size = it }
-    .pointerInput(state) {
-        detectTapGestures(onTap = { onTap() }, onDoubleTap = { state.toggle(it) })
+    .pointerInput(state, onDoubleTap) {
+        detectTapGestures(
+            onTap = { onTap() },
+            onDoubleTap = { if (!onDoubleTap(it, state.size)) state.toggle(it) },
+        )
     }
     .pointerInput(state) {
         awaitEachGesture {
@@ -92,6 +101,9 @@ fun Modifier.zoomable(state: ZoomState, onTap: () -> Unit): Modifier = this
             } while (event.changes.any { it.pressed })
         }
     }
+
+/** Shared so the gesture detector isn't restarted by a fresh default lambda on every recomposition. */
+private val NoDoubleTapAction: (Offset, IntSize) -> Boolean = { _, _ -> false }
 
 /** Draws content with the zoom and pan from [state]. */
 fun Modifier.zoomed(state: ZoomState): Modifier = graphicsLayer {

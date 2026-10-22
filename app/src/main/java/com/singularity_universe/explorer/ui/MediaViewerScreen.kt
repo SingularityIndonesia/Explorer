@@ -20,8 +20,14 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,11 +51,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -76,8 +84,11 @@ import kotlinx.coroutines.delay
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: Int) {
+    val context = LocalContext.current
     val pagerState = rememberPagerState(initialPage = startIndex) { items.size }
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
+    // While the ⋮ menu is open the controls must not auto-hide (that would close the menu).
+    var menuOpen by remember { mutableStateOf(false) }
     ImmersiveSystemBars(visible = chromeVisible)
     // One zoom per page; while the current page is zoomed, drags pan it instead of swiping pages.
     val zoomStates = remember { mutableStateMapOf<Int, ZoomState>() }
@@ -103,6 +114,7 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                     zoom = zoom,
                     isCurrent = pagerState.settledPage == page,
                     controlsVisible = chromeVisible,
+                    holdControls = menuOpen,
                     onToggleControls = { chromeVisible = !chromeVisible },
                     onHideControls = { chromeVisible = false },
                 )
@@ -134,10 +146,25 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                 navigationIcon = {
                     IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
+                actions = {
+                    OverflowMenu(onExpandedChange = { menuOpen = it }) {
+                        item("Locate", Icons.Outlined.FolderOpen) { vm.locate(current) }
+                        item("Copy to…", Icons.Outlined.ContentCopy) { vm.startTransfer(listOf(current.path), move = false) }
+                        item("Move to…", Icons.AutoMirrored.Outlined.DriveFileMove) {
+                            vm.startTransfer(listOf(current.path), move = true)
+                        }
+                        item("Open with", Icons.AutoMirrored.Outlined.OpenInNew) {
+                            // Other apps can't read files on a server or in Android/data: hand them a copy.
+                            if (vm.repo.needsCopyToOpen(current.path)) vm.openRestricted(current) { context.openFile(it) }
+                            else context.openFile(current)
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Black.copy(alpha = 0.4f),
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White,
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -176,6 +203,7 @@ private fun VideoPage(
     zoom: ZoomState,
     isCurrent: Boolean,
     controlsVisible: Boolean,
+    holdControls: Boolean,
     onToggleControls: () -> Unit,
     onHideControls: () -> Unit,
 ) {
@@ -231,15 +259,40 @@ private fun VideoPage(
         }
     }
     // Like most players, hide the controls a few seconds after playback starts.
-    LaunchedEffect(controlsVisible, isPlaying) {
-        if (controlsVisible && isPlaying) {
+    LaunchedEffect(controlsVisible, isPlaying, holdControls) {
+        if (controlsVisible && isPlaying && !holdControls) {
             delay(3000)
             onHideControls()
         }
     }
 
+    // Double-tap the left or right third to jump 5 s, like most video players; the middle zooms.
+    var seekHint by remember { mutableStateOf<SeekHint?>(null) }
+    val onDoubleTap = remember(player) {
+        { position: Offset, size: IntSize ->
+            val forward = when {
+                position.x < size.width / 3f -> false
+                position.x > size.width * 2 / 3f -> true
+                else -> null
+            }
+            if (forward != null) {
+                val target = player.currentPosition + if (forward) SEEK_STEP_MS else -SEEK_STEP_MS
+                val end = player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+                player.seekTo(target.coerceIn(0L, end))
+                seekHint = SeekHint(forward, System.nanoTime())
+            }
+            forward != null
+        }
+    }
+    LaunchedEffect(seekHint) {
+        if (seekHint != null) {
+            delay(700)
+            seekHint = null
+        }
+    }
+
     val presentation = rememberPresentationState(player)
-    Box(tapModifier) {
+    Box(Modifier.fillMaxSize().zoomable(zoom, onToggleControls, onDoubleTap)) {
         // Only the picture zooms; the controls below stay where they are.
         Box(Modifier.fillMaxSize().zoomed(zoom)) {
             PlayerSurface(
@@ -253,6 +306,9 @@ private fun VideoPage(
                 AsyncImage(item.thumbnail(512), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             }
         }
+
+        SeekBubble(visible = seekHint?.forward == false, forward = false, Modifier.align(Alignment.CenterStart))
+        SeekBubble(visible = seekHint?.forward == true, forward = true, Modifier.align(Alignment.CenterEnd))
 
         AnimatedVisibility(
             visible = controlsVisible,
@@ -318,6 +374,32 @@ private fun VideoPage(
                 )
                 Text(formatTime(duration), color = Color.White, style = MaterialTheme.typography.labelMedium)
             }
+        }
+    }
+}
+
+private const val SEEK_STEP_MS = 5_000L
+
+/** The last double-tap seek, shown briefly on its side. [id] lets repeated taps restart the timer. */
+private data class SeekHint(val forward: Boolean, val id: Long)
+
+@Composable
+private fun SeekBubble(visible: Boolean, forward: Boolean, modifier: Modifier) {
+    AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut(), modifier = modifier.padding(horizontal = 40.dp)) {
+        Row(
+            Modifier
+                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (!forward) Icon(Icons.Filled.FastRewind, null, tint = Color.White)
+            Text(
+                "${SEEK_STEP_MS / 1000}s",
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(horizontal = 6.dp),
+            )
+            if (forward) Icon(Icons.Filled.FastForward, null, tint = Color.White)
         }
     }
 }

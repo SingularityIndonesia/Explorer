@@ -167,6 +167,20 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         return if (ssh.path == "/") sshConnections?.host(ssh.hostId)?.name ?: "Server" else ssh.name
     }
 
+    /** The folder containing [path], on this phone or on an SSH server. */
+    fun parentOf(path: String): String =
+        SshPath.parse(path)?.let { SshPath(it.hostId, it.parent).toString() } ?: File(path).parent ?: repo.rootDir.path
+
+    /** Opens the folder containing [item], scrolled to it and highlighted. */
+    fun locate(item: FileItem) = navigate(Route.Folder(parentOf(item.path), highlight = item.path))
+
+    /** Starts "Copy to" / "Move to" for [paths]: the user then picks a folder and taps Copy/Move here. */
+    fun startTransfer(paths: List<String>, move: Boolean) {
+        pendingTransfer = PendingTransfer(paths, move)
+        navigate(Route.Folder(parentOf(paths.first())))
+        message("Open a folder, then tap ${if (move) "Move here" else "Copy here"}")
+    }
+
     /** Where a folder is, for subtitles: its path, or "Server name · /path" on an SSH server. */
     fun displayLocation(path: String): String {
         val ssh = SshPath.parse(path) ?: return path

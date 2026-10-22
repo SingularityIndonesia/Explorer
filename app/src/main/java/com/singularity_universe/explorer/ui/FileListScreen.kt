@@ -486,12 +486,16 @@ class OverflowMenuScope(private val dismiss: () -> Unit) {
 }
 
 @Composable
-fun OverflowMenu(content: OverflowMenuScope.() -> Unit) {
+fun OverflowMenu(onExpandedChange: (Boolean) -> Unit = {}, content: OverflowMenuScope.() -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    fun setExpanded(value: Boolean) {
+        expanded = value
+        onExpandedChange(value)
+    }
     Box {
-        IconButton(onClick = { expanded = true }) { Icon(Icons.Default.MoreVert, "More options") }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            OverflowMenuScope { expanded = false }.apply(content).entries.forEach { (label, icon, onClick) ->
+        IconButton(onClick = { setExpanded(true) }) { Icon(Icons.Default.MoreVert, "More options") }
+        DropdownMenu(expanded = expanded, onDismissRequest = { setExpanded(false) }) {
+            OverflowMenuScope { setExpanded(false) }.apply(content).entries.forEach { (label, icon, onClick) ->
                 DropdownMenuItem(
                     text = { Text(label) },
                     leadingIcon = { Icon(icon, null) },
