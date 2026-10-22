@@ -79,6 +79,11 @@ import com.singularity_universe.explorer.remote.RemoteAccessRequiredException
 import com.singularity_universe.explorer.remote.RemoteConnection
 import com.singularity_universe.explorer.remote.SshPath
 import java.io.File
+import java.time.Instant
+import java.time.YearMonth
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -224,7 +229,19 @@ fun RecentsScreen(vm: ExplorerViewModel) {
     FileListScreen(
         vm, "Recents", data.value, "No recent files",
         sortable = false, refreshing = data.refreshing, onRefresh = data::refresh,
+        sectionOf = { monthLabel(it.lastModified) },
     )
+}
+
+/** "This month", "Last month", then "September 2026" style headers. */
+private fun monthLabel(millis: Long): String {
+    val month = YearMonth.from(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
+    val now = YearMonth.now()
+    return when (month) {
+        now -> "This month"
+        now.minusMonths(1) -> "Last month"
+        else -> DateTimeFormatter.ofPattern("LLLL yyyy", Locale.getDefault()).format(month)
+    }
 }
 
 @Composable

@@ -105,7 +105,8 @@ class FileRepository(private val context: Context) {
             FileColumns.MEDIA_TYPE_VIDEO.toString(),
             "${Environment.DIRECTORY_DOWNLOADS}/%",
         ),
-        sort = "${FileColumns.DATE_ADDED} DESC",
+        // Modified date, not date added: it's the date rows show and Recents groups by month.
+        sort = "${FileColumns.DATE_MODIFIED} DESC",
         limit = limit,
     )
 

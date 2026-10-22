@@ -94,6 +94,8 @@ fun FileListScreen(
     refreshing: Boolean = false,
     onRefresh: (() -> Unit)? = null,
     highlightPath: String? = null,
+    /** Groups the list under headers (e.g. per month); items must already be in that order. */
+    sectionOf: ((FileItem) -> String)? = null,
     header: @Composable () -> Unit = {},
     topBar: (@Composable () -> Unit)? = null,
 ) {
@@ -225,6 +227,7 @@ fun FileListScreen(
                 header = header,
                 emptyText = emptyText,
                 highlightPath = highlightPath,
+                sectionOf = sectionOf,
                 onClick = ::open,
                 onLongClick = ::toggle,
             )
@@ -275,20 +278,22 @@ private fun FileCollection(
     header: @Composable () -> Unit,
     emptyText: String,
     highlightPath: String?,
+    sectionOf: ((FileItem) -> String)?,
     onClick: (FileItem) -> Unit,
     onLongClick: (FileItem) -> Unit,
 ) {
     val contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 96.dp)
     val listState = rememberLazyListState()
     val gridState = rememberLazyGridState()
+    // Consecutive runs of items under one header; a single unlabeled run when not sectioned.
+    val sections = remember(items, sectionOf) { sectionsOf(items, sectionOf) }
 
     // Scroll to the highlighted file once it appears, then let the highlight fade out.
     var flashing by rememberSaveable(highlightPath) { mutableStateOf(highlightPath) }
-    val highlightIndex = flashing?.let { path -> items.indexOfFirst { it.path == path } } ?: -1
+    val highlightIndex = flashing?.let { path -> lazyIndexOf(sections, path) } ?: -1
     LaunchedEffect(highlightIndex) {
         if (highlightIndex < 0) return@LaunchedEffect
-        val index = highlightIndex + 1 // after the header item
-        if (grid) gridState.animateScrollToItem(index) else listState.animateScrollToItem(index)
+        if (grid) gridState.animateScrollToItem(highlightIndex) else listState.animateScrollToItem(highlightIndex)
         delay(2500)
         flashing = null
     }
@@ -303,11 +308,16 @@ private fun FileCollection(
             item(span = { GridItemSpan(maxLineSpan) }) { header() }
             if (loading) item(span = { GridItemSpan(maxLineSpan) }) { Loading() }
             else if (items.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Empty(emptyText) }
-            items(items, key = { it.path }) { item ->
-                FileGridCell(
-                    item, item.path in selected, item.path in starred, { onClick(item) }, { onLongClick(item) },
-                    highlighted = item.path == flashing,
-                )
+            sections.forEach { (label, group) ->
+                if (label != null) {
+                    item(key = "section:$label", span = { GridItemSpan(maxLineSpan) }) { SectionHeader(label) }
+                }
+                items(group, key = { it.path }) { item ->
+                    FileGridCell(
+                        item, item.path in selected, item.path in starred, { onClick(item) }, { onLongClick(item) },
+                        highlighted = item.path == flashing,
+                    )
+                }
             }
         }
     } else {
@@ -315,14 +325,49 @@ private fun FileCollection(
             item { header() }
             if (loading) item { Loading() }
             else if (items.isEmpty()) item { Empty(emptyText) }
-            items(items, key = { it.path }) { item ->
-                FileRow(
-                    item, item.path in selected, item.path in starred, { onClick(item) }, { onLongClick(item) },
-                    highlighted = item.path == flashing,
-                )
+            sections.forEach { (label, group) ->
+                if (label != null) item(key = "section:$label") { SectionHeader(label) }
+                items(group, key = { it.path }) { item ->
+                    FileRow(
+                        item, item.path in selected, item.path in starred, { onClick(item) }, { onLongClick(item) },
+                        highlighted = item.path == flashing,
+                    )
+                }
             }
         }
     }
+}
+
+private fun sectionsOf(items: List<FileItem>, sectionOf: ((FileItem) -> String)?): List<Pair<String?, List<FileItem>>> {
+    if (sectionOf == null) return listOf(null to items)
+    val result = mutableListOf<Pair<String?, MutableList<FileItem>>>()
+    for (item in items) {
+        val label = sectionOf(item)
+        if (result.lastOrNull()?.first == label) result.last().second += item else result += label to mutableListOf(item)
+    }
+    return result
+}
+
+/** Position of [path] in the lazy list: after the screen header and any section headers before it. */
+private fun lazyIndexOf(sections: List<Pair<String?, List<FileItem>>>, path: String): Int {
+    var index = 1 // the screen header
+    for ((label, group) in sections) {
+        if (label != null) index++
+        val inGroup = group.indexOfFirst { it.path == path }
+        if (inGroup >= 0) return index + inGroup
+        index += group.size
+    }
+    return -1
+}
+
+@Composable
+private fun SectionHeader(label: String) {
+    Text(
+        label,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 20.dp, bottom = 6.dp),
+    )
 }
 
 @Composable
