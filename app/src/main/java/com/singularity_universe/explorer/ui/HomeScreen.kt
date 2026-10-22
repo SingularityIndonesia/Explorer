@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -34,6 +36,8 @@ import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Audiotrack
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Devices
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Info
@@ -70,11 +74,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.singularity_universe.explorer.data.Category
 import com.singularity_universe.explorer.data.FileItem
+import com.singularity_universe.explorer.remote.AdbDevices
+import com.singularity_universe.explorer.remote.SshConnections
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(vm: ExplorerViewModel, onOpenDrawer: () -> Unit) {
     val context = LocalContext.current
+    val ssh = LocalSshConnections.current
+    val adb = LocalAdbDevices.current
     val recentsData = vm.recents().observe()
     val sizesData = vm.categorySizes().observe()
     val storageData = vm.storage().observe()
@@ -152,10 +160,20 @@ fun HomeScreen(vm: ExplorerViewModel, onOpenDrawer: () -> Unit) {
                             "Internal storage",
                             storage?.let { "${context.formatSize(it.free)} free" } ?: "…",
                         ) { vm.navigate(Route.Folder(vm.repo.rootDir.path)) },
-                        Tile(Icons.Outlined.Storage, "Other storage", "SD cards, USB drives and SSH servers") {
+                        Tile(Icons.Outlined.Storage, "Other storage", "SD cards and USB drives") {
                             vm.navigate(Route.OtherStorage)
                         },
-                    )
+                    ) + ssh.hosts.map { host ->
+                        val connected = ssh.status[host.id] == SshConnections.Status.Connected
+                        Tile(Icons.Outlined.Dns, host.name, if (connected) "Connected · ${host.address}" else host.address) {
+                            vm.openServer(host.id)
+                        }
+                    } + adb.devices.map { device ->
+                        val connected = adb.status[device.id] == AdbDevices.Status.Connected
+                        Tile(Icons.Outlined.Devices, device.name, if (connected) "Connected · ${device.address}" else device.address) {
+                            vm.openDevice(device.id)
+                        }
+                    }
                 )
             }
           }
@@ -329,7 +347,7 @@ private data class Tile(
 private fun TileGrid(tiles: List<Tile>) {
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         tiles.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { TileCard(it, Modifier.weight(1f)) }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
@@ -344,13 +362,14 @@ private fun TileCard(tile: Tile, modifier: Modifier) {
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
         border = BorderStroke(0.dp, Color.Transparent),
-        modifier = modifier.height(76.dp),
+        // Grows for two-line titles; tiles in a row share the tallest height.
+        modifier = modifier.fillMaxHeight().heightIn(min = 76.dp),
     ) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(tile.icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(20.dp))
             Column {
-                Text(tile.title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                Text(tile.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 tile.subtitle?.let {
                     Text(
                         it,

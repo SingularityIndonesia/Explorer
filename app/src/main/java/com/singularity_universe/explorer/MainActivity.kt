@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ScreenShare
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Dns
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -50,6 +53,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.singularity_universe.explorer.remote.AdbDevices
@@ -165,6 +169,7 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
     val stateHolder = rememberSaveableStateHolder()
     val ssh = LocalSshConnections.current
     val adbDevices = LocalAdbDevices.current
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         vm.messages.collect {
@@ -213,6 +218,7 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
                                 name = device.name,
                                 icon = Icons.Outlined.Devices,
                                 connected = adbDevices.status[device.id] == AdbDevices.Status.Connected,
+                                onRemoteControl = { go { RemoteControlActivity.start(context, device.id) } },
                             ) { go { vm.goHome(); vm.openDevice(device.id) } }
                         }
                     }
@@ -275,13 +281,24 @@ private fun Screen(vm: ExplorerViewModel, route: Route, onOpenDrawer: () -> Unit
 internal fun shortcutName(vm: ExplorerViewModel, path: String): String = vm.displayName(path)
 
 @Composable
-private fun RemoteDrawerItem(name: String, icon: ImageVector, connected: Boolean, onClick: () -> Unit) {
+private fun RemoteDrawerItem(
+    name: String,
+    icon: ImageVector,
+    connected: Boolean,
+    onRemoteControl: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     NavigationDrawerItem(
         label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         icon = { Icon(icon, null) },
         badge = {
-            if (connected) {
-                Text("Connected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (connected) {
+                    Text("Connected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                }
+                if (onRemoteControl != null) {
+                    IconButton(onClick = onRemoteControl) { Icon(Icons.AutoMirrored.Outlined.ScreenShare, "Remote control") }
+                }
             }
         },
         selected = false,

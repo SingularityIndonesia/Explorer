@@ -76,8 +76,10 @@ import com.singularity_universe.explorer.data.AppItem
 import com.singularity_universe.explorer.data.Category
 import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.toFileItem
+import com.singularity_universe.explorer.remote.AdbPath
 import com.singularity_universe.explorer.remote.RemoteAccessRequiredException
 import com.singularity_universe.explorer.remote.RemoteConnection
+import com.singularity_universe.explorer.remote.SshPath
 import java.io.File
 import java.time.Instant
 import java.time.YearMonth
@@ -95,9 +97,29 @@ fun FolderScreen(vm: ExplorerViewModel, path: String, highlight: String? = null)
     val data = vm.folder(path).observe()
     val error = data.error
     val needsRemote = error is RemoteAccessRequiredException
+    val ssh = LocalSshConnections.current
+    val adb = LocalAdbDevices.current
+    // On a server or device: the address in use, tap to switch route (then reload through it).
+    val subtitle: (@Composable () -> Unit)? =
+        SshPath.parse(path)?.let { ssh.host(it.hostId) }?.let { host ->
+            {
+                AddressSwitcher(host.hosts.indices.map(host::addressOf), host.activeHost, onSelect = { index ->
+                    ssh.useAddress(host.id, index)
+                    data.refresh()
+                })
+            }
+        } ?: AdbPath.parse(path)?.let { adb.device(it.deviceId) }?.let { device ->
+            {
+                AddressSwitcher(device.hosts.indices.map(device::addressOf), device.activeHost, onSelect = { index ->
+                    adb.useAddress(device.id, index)
+                    data.refresh()
+                })
+            }
+        }
     FileListScreen(
         vm = vm,
         title = vm.displayName(path),
+        subtitle = subtitle,
         items = if (error != null && data.value == null) emptyList() else data.value,
         refreshing = data.refreshing,
         onRefresh = data::refresh,
@@ -112,6 +134,15 @@ fun FolderScreen(vm: ExplorerViewModel, path: String, highlight: String? = null)
             Column {
                 Breadcrumbs(vm, root, path)
                 if (needsRemote) RemoteRequiredCard(onSetUp = { vm.navigate(Route.Remote) })
+                // A reload failed (e.g. after switching to an unreachable address) but older contents are shown.
+                if (error != null && !needsRemote && data.value != null) {
+                    Text(
+                        "Couldn't refresh: ${error.message ?: "connection failed"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    )
+                }
             }
         },
     )

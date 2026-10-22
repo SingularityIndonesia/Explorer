@@ -205,7 +205,8 @@ class RemoteConnection private constructor(private val app: Context) {
         val result = runCatching {
             lock.withLock {
                 val adb = manager ?: AdbManager(app).also { manager = it }
-                val ok = runInterruptible { adb.pair(host.hostAddress, pairingPort, code.trim()) }
+                val address = host.hostAddress ?: throw IOException("Couldn't find the pairing service")
+                val ok = runInterruptible { adb.pair(address, pairingPort, code.trim()) }
                 if (!ok) throw IOException("Pairing failed. Check the code and try again.")
             }
         }

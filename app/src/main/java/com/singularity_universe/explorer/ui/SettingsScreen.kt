@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.ScreenShare
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Delete
@@ -46,13 +47,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.singularity_universe.explorer.RemoteControlActivity
 import com.singularity_universe.explorer.remote.AdbDevice
 import com.singularity_universe.explorer.remote.AdbDevices
+import com.singularity_universe.explorer.remote.Endpoint
 import com.singularity_universe.explorer.remote.RemoteConnection.Status
 import com.singularity_universe.explorer.remote.SshConnections
 import com.singularity_universe.explorer.remote.SshHost
@@ -62,6 +66,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(vm: ExplorerViewModel) {
+    val context = LocalContext.current
     val remote = LocalRemoteConnection.current
     val ssh = LocalSshConnections.current
     // null = closed; a host with an empty id = adding a new server.
@@ -121,6 +126,9 @@ fun SettingsScreen(vm: ExplorerViewModel) {
                         leading = { Icon(Icons.Outlined.Devices, null) },
                         trailing = {
                             OverflowMenu {
+                                item("Remote control", Icons.AutoMirrored.Outlined.ScreenShare) {
+                                    RemoteControlActivity.start(context, device.id)
+                                }
                                 item("Edit / pair", Icons.Outlined.Edit) { editingDevice = device }
                                 item("Remove", Icons.Outlined.Delete) { adb.remove(device.id) }
                             }
@@ -132,13 +140,13 @@ fun SettingsScreen(vm: ExplorerViewModel) {
                     title = "Add SSH server",
                     subtitle = "Browse a computer or NAS over SSH (SFTP)",
                     leading = { Icon(Icons.Outlined.Add, null) },
-                    onClick = { editing = SshHost("", "", "", 22, "", "") },
+                    onClick = { editing = SshHost("", "", emptyList(), 22, "", "") },
                 )
                 SettingsRow(
                     title = "Add Android device",
                     subtitle = "Browse another phone, tablet or TV over its Wireless debugging",
                     leading = { Icon(Icons.Outlined.Add, null) },
-                    onClick = { editingDevice = AdbDevice("", "", "", 0) },
+                    onClick = { editingDevice = AdbDevice("", "", emptyList(), 0) },
                 )
             }
 
@@ -221,14 +229,15 @@ fun SettingsScreen(vm: ExplorerViewModel) {
 @Composable
 private fun SshServerDialog(initial: SshHost, onDismiss: () -> Unit, onSave: (SshHost) -> Unit) {
     var name by remember { mutableStateOf(initial.name) }
-    var host by remember { mutableStateOf(initial.host) }
+    var addresses by remember { mutableStateOf(initial.hosts.joinToString("\n")) }
     var port by remember { mutableStateOf(initial.port.toString()) }
     var username by remember { mutableStateOf(initial.username) }
     var password by remember { mutableStateOf(initial.password) }
     var startPath by remember { mutableStateOf(initial.startPath) }
     var showPassword by remember { mutableStateOf(false) }
     val portNumber = port.toIntOrNull()?.takeIf { it in 1..65535 }
-    val valid = host.isNotBlank() && username.isNotBlank() && portNumber != null
+    val hosts = Endpoint.parseLines(addresses)
+    val valid = hosts.isNotEmpty() && username.isNotBlank() && portNumber != null
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -239,7 +248,7 @@ private fun SshServerDialog(initial: SshHost, onDismiss: () -> Unit, onSave: (Ss
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 DialogField("Name (optional)", name) { name = it }
-                DialogField("Host or IP address", host, KeyboardType.Uri) { host = it.trim() }
+                AddressesField(addresses) { addresses = it }
                 DialogField("Port", port, KeyboardType.Number) { port = it.filter(Char::isDigit).take(5) }
                 DialogField("Username", username) { username = it.trim() }
                 OutlinedTextField(
@@ -273,8 +282,9 @@ private fun SshServerDialog(initial: SshHost, onDismiss: () -> Unit, onSave: (Ss
                 onClick = {
                     onSave(
                         initial.copy(
-                            name = name.trim().ifEmpty { host },
-                            host = host,
+                            name = name.trim().ifEmpty { Endpoint.parse(hosts.first())?.host ?: hosts.first() },
+                            hosts = hosts,
+                            activeHost = keepActive(initial.hosts, initial.activeHost, hosts),
                             port = portNumber ?: 22,
                             username = username,
                             password = password,
@@ -295,7 +305,7 @@ private fun AdbDeviceDialog(
     onSave: (device: AdbDevice, pairingPort: Int?, pairingCode: String) -> Unit,
 ) {
     var name by remember { mutableStateOf(initial.name) }
-    var host by remember { mutableStateOf(initial.host) }
+    var addresses by remember { mutableStateOf(initial.hosts.joinToString("\n")) }
     var port by remember { mutableStateOf(if (initial.port > 0) initial.port.toString() else "") }
     var pairingCode by remember { mutableStateOf("") }
     var pairingPort by remember { mutableStateOf("") }
@@ -303,7 +313,8 @@ private fun AdbDeviceDialog(
     val pairingPortNumber = pairingPort.toIntOrNull()?.takeIf { it in 1..65535 }
     // Pairing is optional (only the first time), but if started it needs both the code and its port.
     val pairingValid = pairingCode.isBlank() || (pairingCode.length == 6 && pairingPortNumber != null)
-    val valid = host.isNotBlank() && portNumber != null && pairingValid
+    val hosts = Endpoint.parseLines(addresses)
+    val valid = hosts.isNotEmpty() && portNumber != null && pairingValid
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -319,7 +330,7 @@ private fun AdbDeviceDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 DialogField("Name (optional)", name) { name = it }
-                DialogField("IP address", host, KeyboardType.Uri) { host = it.trim() }
+                AddressesField(addresses) { addresses = it }
                 DialogField("Port (under \"IP address & Port\")", port, KeyboardType.Number) {
                     port = it.filter(Char::isDigit).take(5)
                 }
@@ -341,7 +352,12 @@ private fun AdbDeviceDialog(
                 enabled = valid,
                 onClick = {
                     onSave(
-                        initial.copy(name = name.trim().ifEmpty { host }, host = host, port = portNumber ?: 0),
+                        initial.copy(
+                            name = name.trim().ifEmpty { Endpoint.parse(hosts.first())?.host ?: hosts.first() },
+                            hosts = hosts,
+                            activeHost = keepActive(initial.hosts, initial.activeHost, hosts),
+                            port = portNumber ?: 0,
+                        ),
                         pairingPortNumber,
                         pairingCode,
                     )
@@ -351,6 +367,24 @@ private fun AdbDeviceDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
+
+/** Addresses, one per line; a line may add its own port (`host:port`). */
+@Composable
+private fun AddressesField(value: String, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text("Addresses (one per line)") },
+        supportingText = { Text("e.g. home Wi-Fi IP and VPN IP. Add :port if a route uses another port.") },
+        minLines = 2,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** After editing the address list, keep using the same address if it's still there. */
+private fun keepActive(oldHosts: List<String>, oldActive: Int, newHosts: List<String>): Int =
+    oldHosts.getOrNull(oldActive)?.let { newHosts.indexOf(it) }?.takeIf { it >= 0 } ?: 0
 
 @Composable
 private fun DialogField(

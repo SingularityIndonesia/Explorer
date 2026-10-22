@@ -44,6 +44,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Remote control of another Android device: its own task (one per device), so it can sit
+             next to Explorer in split screen or float as picture-in-picture. configChanges keeps the
+             stream running through rotation and PiP resizing. -->
+        <activity
+                android:name=".RemoteControlActivity"
+                android:exported="false"
+                android:label="Remote control"
+                android:taskAffinity="com.singularity_universe.explorer.remote"
+                android:documentLaunchMode="intoExisting"
+                android:resizeableActivity="true"
+                android:supportsPictureInPicture="true"
+                android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
+                android:theme="@style/Theme.Explorer"/>
+
         <receiver
                 android:name=".remote.PairingReceiver"
                 android:exported="false"/>

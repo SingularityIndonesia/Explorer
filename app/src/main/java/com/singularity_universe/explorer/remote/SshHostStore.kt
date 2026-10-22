@@ -16,14 +16,35 @@ import javax.crypto.spec.GCMParameterSpec
 data class SshHost(
     val id: String,
     val name: String,
-    val host: String,
+    /** Ways to reach the server (e.g. home Wi-Fi IP, VPN IP), as `host` or `host:port`. */
+    val hosts: List<String>,
+    /** Default port, for addresses that don't name their own. */
     val port: Int,
     val username: String,
     val password: String,
     /** Folder to open first; blank means the user's home folder. */
     val startPath: String = "",
+    /** Which of [hosts] is used now. */
+    val activeHost: Int = 0,
 ) {
-    val address: String get() = if (port == 22) "$username@$host" else "$username@$host:$port"
+    private val endpoint: Endpoint
+        get() = Endpoint.parse(hosts.getOrElse(activeHost) { hosts.firstOrNull().orEmpty() }) ?: Endpoint("")
+
+    /** Host of the address in use. */
+    val host: String get() = endpoint.host
+
+    /** Port of the address in use. */
+    val connectPort: Int get() = endpoint.port ?: port
+
+    /** The address in use, e.g. "steve@10.0.0.2" or "steve@vpn.example:2222". */
+    val address: String get() = addressOf(activeHost)
+
+    fun addressOf(index: Int): String {
+        val e = Endpoint.parse(hosts.getOrElse(index) { "" }) ?: return username
+        val p = e.port ?: port
+        val host = Endpoint(e.host).toString()
+        return if (p == 22) "$username@$host" else "$username@$host:$p"
+    }
 }
 
 /**
@@ -40,8 +61,11 @@ internal class SshHostStore(context: Context) {
             SshHost(
                 id = o.getString("id"),
                 name = o.getString("name"),
-                host = o.getString("host"),
+                // Older versions saved a single "host".
+                hosts = o.optJSONArray("hosts")?.let { a -> List(a.length()) { a.getString(it) } }
+                    ?: listOf(o.getString("host")),
                 port = o.getInt("port"),
+                activeHost = o.optInt("activeHost"),
                 username = o.getString("username"),
                 password = runCatching { decrypt(o.getString("password")) }.getOrDefault(""),
                 startPath = o.optString("startPath"),
@@ -56,7 +80,8 @@ internal class SshHostStore(context: Context) {
                 JSONObject()
                     .put("id", h.id)
                     .put("name", h.name)
-                    .put("host", h.host)
+                    .put("hosts", JSONArray(h.hosts))
+                    .put("activeHost", h.activeHost)
                     .put("port", h.port)
                     .put("username", h.username)
                     .put("password", encrypt(h.password))

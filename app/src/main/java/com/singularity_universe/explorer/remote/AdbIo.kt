@@ -116,7 +116,7 @@ private fun InputStream.readHeader(): Pair<String, Int> {
     return id to value
 }
 
-private fun InputStream.readExactly(length: Int): ByteArray {
+internal fun InputStream.readExactly(length: Int): ByteArray {
     val data = ByteArray(length)
     var filled = 0
     while (filled < length) {

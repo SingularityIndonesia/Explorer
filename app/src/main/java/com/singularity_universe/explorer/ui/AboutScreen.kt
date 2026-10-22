@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ScreenShare
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.Info
@@ -152,6 +153,9 @@ fun AboutScreen(vm: ExplorerViewModel) {
                     AboutRow(Icons.Outlined.Language, "Website", WEBSITE) { openUrl(WEBSITE) }
                     AboutRow(Icons.Outlined.Code, "Source code", SOURCE_CODE) { openUrl(SOURCE_CODE) }
                     AboutRow(Icons.Outlined.Gavel, "License", "MIT License") { showLicense = true }
+                    AboutRow(Icons.AutoMirrored.Outlined.ScreenShare, "Remote control uses scrcpy", "Apache License 2.0 · github.com/Genymobile/scrcpy") {
+                        openUrl("https://github.com/Genymobile/scrcpy")
+                    }
                 }
             }
             // Room to scroll the last row clear of the Settings button.

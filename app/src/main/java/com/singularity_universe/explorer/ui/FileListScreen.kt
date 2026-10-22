@@ -96,6 +96,8 @@ fun FileListScreen(
     highlightPath: String? = null,
     /** Groups the list under headers (e.g. per month); items must already be in that order. */
     sectionOf: ((FileItem) -> String)? = null,
+    /** Shown under the title, e.g. the address a remote folder is reached through. */
+    subtitle: (@Composable () -> Unit)? = null,
     header: @Composable () -> Unit = {},
     topBar: (@Composable () -> Unit)? = null,
 ) {
@@ -172,7 +174,12 @@ fun FileListScreen(
                 topBar != null -> topBar()
 
                 else -> TopAppBar(
-                    title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    title = {
+                        Column {
+                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            subtitle?.invoke()
+                        }
+                    },
                     navigationIcon = {
                         IconButton(onClick = { vm.back() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")

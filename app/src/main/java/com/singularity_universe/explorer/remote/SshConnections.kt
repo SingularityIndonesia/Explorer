@@ -39,7 +39,8 @@ class SshConnections private constructor(private val app: Context) {
         data class Failed(val message: String) : Status
     }
 
-    private class Live(val session: Session, val sftp: ChannelSftp, val home: String)
+    /** An open session, and the address it was opened through. */
+    private class Live(val session: Session, val sftp: ChannelSftp, val home: String, val address: String)
 
     private val store = SshHostStore(app)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -65,6 +66,13 @@ class SshConnections private constructor(private val app: Context) {
         // Settings changed: the next use reconnects with them.
         if (index >= 0) disconnect(saved.id)
         return saved
+    }
+
+    /** Switches which address the server is reached through; the next use reconnects through it. */
+    fun useAddress(id: String, index: Int) {
+        val host = host(id) ?: return
+        if (index !in host.hosts.indices || index == host.activeHost) return
+        save(host.copy(activeHost = index))
     }
 
     fun remove(id: String) {
@@ -148,16 +156,19 @@ class SshConnections private constructor(private val app: Context) {
     }
 
     private fun connected(id: String): Live {
-        synchronized(live) { live[id] }?.takeIf { it.session.isConnected && it.sftp.isConnected }?.let { return it }
-        drop(id)
         val host = host(id) ?: throw IOException("This server was removed")
+        // Reuse the open session unless it died or the user switched to another address.
+        synchronized(live) { live[id] }
+            ?.takeIf { it.session.isConnected && it.sftp.isConnected && it.address == host.address }
+            ?.let { return it }
+        drop(id)
         status[id] = Status.Connecting
         try {
             knownHosts.parentFile?.mkdirs()
             if (!knownHosts.exists()) knownHosts.createNewFile()
             val jsch = JSch().apply { setKnownHosts(knownHosts.path) }
-            val session = jsch.getSession(host.username, host.host, host.port).apply {
-                setPassword(host.password)
+            val session = jsch.getSession(host.username, host.host, host.connectPort).apply {
+                setPassword(host.password.toByteArray())
                 userInfo = PasswordUserInfo(host.password)
                 // "ask" + PasswordUserInfo: trust a server the first time, refuse if its key changes.
                 setConfig("StrictHostKeyChecking", "ask")
@@ -167,7 +178,7 @@ class SshConnections private constructor(private val app: Context) {
                 connect(CONNECT_TIMEOUT_MS)
             }
             val sftp = (session.openChannel("sftp") as ChannelSftp).apply { connect(CONNECT_TIMEOUT_MS) }
-            val opened = Live(session, sftp, sftp.home)
+            val opened = Live(session, sftp, sftp.home, host.address)
             synchronized(live) { live[id] = opened }
             status[id] = Status.Connected
             return opened
