@@ -197,6 +197,24 @@ class TerminalEmulator(columns: Int, rows: Int, private val reply: (ByteArray) -
         return null
     }
 
+    /** The columns of buffer line [index] covered by web addresses (to underline them). */
+    fun urlColumns(index: Int): List<IntRange> {
+        var first = index
+        while (first > 0 && bufferLine(first - 1).wrapped) first--
+        var last = index
+        while (last < totalLines - 1 && bufferLine(last).wrapped) last++
+        val widths = (first..last).map { bufferLine(it).size }
+        val text = (first..last).joinToString("") { lineText(bufferLine(it)) }
+        if (!text.contains("://") && !text.contains("www.")) return emptyList()
+        val start = widths.take(index - first).sum()
+        val end = start + bufferLine(index).size
+        return URL.findAll(text).mapNotNull { match ->
+            val from = match.range.first
+            val to = from + trimUrl(match.value).length - 1
+            if (to < start || from >= end) null else (maxOf(from, start) - start)..(minOf(to, end - 1) - start)
+        }.toList()
+    }
+
     /** A line's cells as text, one character per cell (blank for empty and wide-tail cells). */
     private fun lineText(line: Line): String {
         val sb = StringBuilder(line.size)

@@ -12,6 +12,7 @@ Nothing queued; see the sections below.
 - [x] Remote previews: SSH videos stream with seeking; downloads, uploads and transfers use their own SFTP channel so browsing isn't blocked; edited pictures show their new version.
 - [x] Release build: signing from keystore.properties or EXPLORER_* variables; the classes JSch, libadb and the services load by name checked in the R8 output.
 - [x] CI: GitHub Actions runs the unit tests and builds the debug APK on every push and pull request.
+- [x] Terminal: links underlined; holding a selection at the top or bottom edge scrolls.
 - [x] Terminal: select and copy text, tap links, several sessions (tabs) per server, extra keys hide with a hardware keyboard.
 - [x] Free up space: large files, duplicates (size → quick hash → SHA-256), old downloads, installer files; deleting goes to Trash.
 - [x] Audio player: background playback (Media3 session: notification, lock screen, headphones), folder queue, mini player and Now playing sheet.
@@ -41,8 +42,7 @@ Nothing queued; see the sections below.
 
 ## Terminal
 
-- Drag to the top or bottom edge while selecting to scroll further back.
-- Highlight links in the output (they open on tap but aren't underlined).
+- (nothing open)
 
 ## Editors and previews
 

@@ -97,6 +97,29 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
     private var selecting = false
     private var actionMode: ActionMode? = null
     private val selectionPaint = Paint().apply { color = 0x664FC3F7 }
+    private val linkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF64B5F6.toInt() }
+
+    /** While selecting, the finger's height; at the top or bottom edge the view scrolls on its own. */
+    private var edgeY = -1f
+    private val edgeScroller = object : Runnable {
+        override fun run() {
+            val emulator = terminal?.emulator ?: return
+            if (!selecting || edgeY < 0) return
+            val direction = when {
+                edgeY < padding + cellHeight -> 1 // Up into earlier output.
+                edgeY > height - padding - cellHeight -> -1
+                else -> return
+            }
+            synchronized(emulator) {
+                scrollback = (scrollback + direction).coerceIn(0, emulator.historySize)
+                val row = if (direction > 0) 0 else emulator.rows - 1
+                selection?.let { it[2] = emulator.historySize - scrollback + row }
+            }
+            invalidate()
+            actionMode?.invalidateContentRect()
+            postDelayed(this, 60)
+        }
+    }
     private var scrollRemainder = 0f
 
     init {
@@ -146,6 +169,11 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
                     scrollback == 0 && row == emulator.cursorY && emulator.cursorVisible
                 ) emulator.cursorX else -1
                 drawLine(canvas, line, row, min(line.size, emulator.columns), cursorColumn, reverse)
+                // Web addresses are underlined: tapping one opens it.
+                for (range in emulator.urlColumns(emulator.historySize - scrollback + row)) {
+                    val y = padding + row * cellHeight + ascent + cellHeight * 0.12f
+                    canvas.drawRect(padding + range.first * cellWidth, y, padding + (range.last + 1) * cellWidth, y + maxOf(1f, cellHeight * 0.06f), linkPaint)
+                }
             }
             selection?.let { drawSelection(canvas, emulator, it) }
         }
@@ -329,6 +357,11 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
             when (event.actionMasked) {
                 MotionEvent.ACTION_MOVE -> {
                     val emulator = terminal?.emulator ?: return true
+                    // Near the top or bottom edge: keep scrolling while the finger stays there.
+                    val wasAtEdge = edgeY >= 0 && (edgeY < padding + cellHeight || edgeY > height - padding - cellHeight)
+                    edgeY = event.y
+                    val atEdge = edgeY < padding + cellHeight || edgeY > height - padding - cellHeight
+                    if (atEdge && !wasAtEdge) post(edgeScroller)
                     val (column, row) = cellAt(event)
                     synchronized(emulator) {
                         selection?.let {
@@ -342,6 +375,8 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     selecting = false
+                    edgeY = -1f
+                    removeCallbacks(edgeScroller)
                     actionMode?.invalidateContentRect()
                 }
             }

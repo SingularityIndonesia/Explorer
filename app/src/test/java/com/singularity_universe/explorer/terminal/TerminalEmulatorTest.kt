@@ -62,6 +62,10 @@ class TerminalEmulatorTest {
         emulator.append("go https://example.org/a/very/long/path/x".toByteArray())
         assertEquals("https://example.org/a/very/long/path/x", emulator.urlAt(1, 3))
         assertEquals("https://example.org/a/very/long/path/x", emulator.urlAt(2, 0))
+        // What gets underlined: the address on its own line, and both parts of a wrapped one.
+        assertEquals(listOf(4..28), emulator.urlColumns(0))
+        assertEquals(listOf(3..39), emulator.urlColumns(1))
+        assertEquals(listOf(0..0), emulator.urlColumns(2))
     }
 
     @Test
