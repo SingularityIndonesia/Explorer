@@ -84,6 +84,13 @@
                 android:windowSoftInputMode="adjustResize"
                 android:theme="@style/Theme.Explorer"/>
 
+        <activity
+                android:name=".VideoEditorActivity"
+                android:exported="false"
+                android:label="Edit video"
+                android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+                android:theme="@style/Theme.Explorer"/>
+
         <!-- Text editor: adjustResize keeps the cursor above the keyboard. -->
         <activity
                 android:name=".TextEditorActivity"

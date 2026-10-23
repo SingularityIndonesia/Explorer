@@ -54,6 +54,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui.compose)
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.effect)
     implementation(libs.libadb.android)
     implementation(libs.conscrypt.android)
     implementation(libs.bouncycastle.pkix)

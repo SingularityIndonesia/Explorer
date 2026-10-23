@@ -79,6 +79,7 @@ import androidx.media3.ui.compose.state.rememberPresentationState
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.singularity_universe.explorer.ImageEditorActivity
+import com.singularity_universe.explorer.VideoEditorActivity
 import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.FileKind
 import com.singularity_universe.explorer.data.thumbnail
@@ -155,10 +156,13 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                     IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
-                    if (current.kind == FileKind.Image) {
-                        IconButton(onClick = { editor.launch(ImageEditorActivity.intent(context, current.path)) }) {
-                            Icon(Icons.Outlined.Edit, "Edit")
-                        }
+                    IconButton(onClick = {
+                        editor.launch(
+                            if (current.kind == FileKind.Video) VideoEditorActivity.intent(context, current.path)
+                            else ImageEditorActivity.intent(context, current.path)
+                        )
+                    }) {
+                        Icon(Icons.Outlined.Edit, "Edit")
                     }
                     OverflowMenu(onExpandedChange = { menuOpen = it }) {
                         item("Locate", Icons.Outlined.FolderOpen) { vm.locate(current) }
