@@ -77,6 +77,13 @@
                 android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
                 android:theme="@style/Theme.Explorer"/>
 
+        <activity
+                android:name=".ImageEditorActivity"
+                android:exported="false"
+                android:label="Edit picture"
+                android:windowSoftInputMode="adjustResize"
+                android:theme="@style/Theme.Explorer"/>
+
         <!-- Text editor: adjustResize keeps the cursor above the keyboard. -->
         <activity
                 android:name=".TextEditorActivity"

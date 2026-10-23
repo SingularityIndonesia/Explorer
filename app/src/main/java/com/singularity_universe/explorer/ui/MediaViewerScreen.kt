@@ -2,6 +2,8 @@ package com.singularity_universe.explorer.ui
 
 import android.app.Activity
 import android.text.format.DateUtils
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,6 +78,7 @@ import androidx.media3.ui.compose.modifiers.resizeWithContentScale
 import androidx.media3.ui.compose.state.rememberPresentationState
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.singularity_universe.explorer.ImageEditorActivity
 import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.FileKind
 import com.singularity_universe.explorer.data.thumbnail
@@ -93,6 +97,10 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
     // One zoom per page; while the current page is zoomed, drags pan it instead of swiping pages.
     val zoomStates = remember { mutableStateMapOf<Int, ZoomState>() }
     val currentZoomed = zoomStates[pagerState.currentPage]?.isZoomed == true
+    // A saved edit is a new or changed file: folder lists and Recents must show it.
+    val editor = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) vm.fileChanged()
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
@@ -147,6 +155,11 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                     IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
+                    if (current.kind == FileKind.Image) {
+                        IconButton(onClick = { editor.launch(ImageEditorActivity.intent(context, current.path)) }) {
+                            Icon(Icons.Outlined.Edit, "Edit")
+                        }
+                    }
                     OverflowMenu(onExpandedChange = { menuOpen = it }) {
                         item("Locate", Icons.Outlined.FolderOpen) { vm.locate(current) }
                         item("Copy to…", Icons.Outlined.ContentCopy) { vm.startTransfer(listOf(current.path), move = false) }
