@@ -10,6 +10,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,6 +43,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +78,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -334,7 +339,11 @@ private fun EditorCanvas(
     val handleRadius = with(density) { 28.dp.toPx() }
     var size by remember { mutableStateOf(IntSize.Zero) }
     val bitmap = base.bitmap
-    val fit = fitIn(size, bitmap.width, bitmap.height, margin)
+    val baseFit = fitIn(size, bitmap.width, bitmap.height, margin)
+    // Pinch zoom (two fingers, any tool): null shows the whole picture. A new picture (after a crop) starts unzoomed.
+    var zoomFit by remember(bitmap) { mutableStateOf<Fit?>(null) }
+    val fit = zoomFit ?: baseFit
+    val currentBaseFit by rememberUpdatedState(baseFit)
 
     // The line being drawn, in picture pixels; [strokeVersion] redraws as it grows.
     val stroke = remember { ArrayList<Float>() }
@@ -391,6 +400,8 @@ private fun EditorCanvas(
                 var dragging = false
                 while (true) {
                     val event = awaitPointerEvent()
+                    // A second finger: that's a pinch, not a balloon drag.
+                    if (event.changes.count { it.pressed } > 1) return@awaitEachGesture
                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
                     if (!change.pressed) break
                     if (hit != null) {
@@ -427,6 +438,7 @@ private fun EditorCanvas(
                     ?: return@awaitEachGesture
                 while (true) {
                     val event = awaitPointerEvent()
+                    if (event.changes.count { it.pressed } > 1) return@awaitEachGesture
                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
                     if (!change.pressed) break
                     val point = fitNow.toImage(change.position)
@@ -440,10 +452,31 @@ private fun EditorCanvas(
         }
     }
 
+    Box(Modifier.fillMaxSize()) {
     Canvas(
         Modifier
             .fillMaxSize()
             .onSizeChanged { size = it }
+            // Two fingers zoom and pan, whatever the tool; seen first, so tools don't also act on them.
+            .pointerInput(bitmap) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.changes.count { it.pressed } >= 2) {
+                            val whole = currentBaseFit
+                            val current = zoomFit ?: whole
+                            val scale = (current.scale * event.calculateZoom()).coerceIn(whole.scale, whole.scale * 8)
+                            val ratio = scale / current.scale
+                            val centre = event.calculateCentroid()
+                            val pan = event.calculatePan()
+                            zoomFit = if (scale <= whole.scale * 1.01f) null
+                            else Fit(scale, centre.x - (centre.x - current.left) * ratio + pan.x, centre.y - (centre.y - current.top) * ratio + pan.y)
+                            event.changes.forEach { it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
             .pointerInput(tool, base, block = gestures),
     ) {
         strokeVersion // Redraw while a line is being drawn.
@@ -466,6 +499,15 @@ private fun EditorCanvas(
             }
         }
         if (tool == Tool.Crop) drawCropOverlay(cropRect, fit, bitmap.width, bitmap.height)
+    }
+    if (zoomFit != null) {
+        FilterChip(
+            selected = true,
+            onClick = { zoomFit = null },
+            label = { Text("Fit") },
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+        )
+    }
     }
 }
 

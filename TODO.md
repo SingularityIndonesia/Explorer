@@ -12,6 +12,7 @@ Nothing queued; see the sections below.
 - [x] Remote previews: SSH videos stream with seeking; downloads, uploads and transfers use their own SFTP channel so browsing isn't blocked; edited pictures show their new version.
 - [x] Release build: signing from keystore.properties or EXPLORER_* variables; the classes JSch, libadb and the services load by name checked in the R8 output.
 - [x] CI: GitHub Actions runs the unit tests and builds the debug APK on every push and pull request.
+- [x] Picture editor: pinch to zoom and pan while editing (any tool), with a Fit chip to go back.
 - [x] Audio: a folder on an SSH server plays as a streamed queue; playback resumes where it stopped after reopening the app.
 - [x] Terminal: links underlined; holding a selection at the top or bottom edge scrolls.
 - [x] Terminal: select and copy text, tap links, several sessions (tabs) per server, extra keys hide with a hardware keyboard.
@@ -48,7 +49,7 @@ Nothing queued; see the sections below.
 ## Editors and previews
 
 - Stream videos on other Android devices too (their sync protocol can't start mid-file; needs another way to read ranges).
-- Picture editor: pinch to zoom while editing; work on pictures larger than 4096 px at full size.
+- Picture editor: work on pictures larger than 4096 px at full size.
 - Video editor: keep saving when the editor is left (currently cancels); keep the original container (`.mkv`, `.webm`) instead of always MP4.
 - Document preview: Word headers/footers and page breaks; PowerPoint charts, SmartArt, rotated shapes; the older `.doc`/`.ppt`/`.xls` formats.
 
