@@ -84,6 +84,13 @@ class AdbFiles(val devices: AdbDevices) {
         devices.pull(from.deviceId, from.path, target)
     }
 
+    /** Total size of a file or folder, from `du` (to the nearest kilobyte). */
+    suspend fun size(path: String): Long? {
+        val at = parse(path)
+        return devices.exec(at.deviceId, "du -sk -- ${shellQuote(at.path)}").takeIf { it.ok }
+            ?.output?.trim()?.substringBefore('\t')?.trim()?.toLongOrNull()?.times(1024)
+    }
+
     /** Size and modification time of a file, to notice when it changed (or null if it's gone). */
     suspend fun stamp(path: String): String? {
         val at = parse(path)

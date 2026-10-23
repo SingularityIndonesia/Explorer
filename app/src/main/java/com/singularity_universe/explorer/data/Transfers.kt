@@ -93,8 +93,11 @@ object Transfers {
             var error: String? = null
             val bytes = CopyProgress()
             copying = bytes
-            // A size to show progress against, when every source is on this phone.
-            val totalBytes = if (request.paths.none(repo::needsCopyToOpen)) request.paths.sumOf { FileCopier.sizeOf(File(it)) } else 0L
+            // A size to show progress against (measured on the server for remote sources); 0 if unknown.
+            progress = Progress(request, 0, request.paths.size, "Measuring…", queued = synchronized(queue) { queue.size })
+            TransferService.update(app)
+            val sizes = request.paths.map { repo.totalSize(it) }
+            val totalBytes = if (sizes.any { it == null }) 0L else sizes.sumOf { it!! }
             fun publish(current: String) {
                 progress = Progress(request, done, request.paths.size, current, bytes.bytes, totalBytes, synchronized(queue) { queue.size })
                 TransferService.update(app)

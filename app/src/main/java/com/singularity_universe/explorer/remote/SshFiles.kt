@@ -112,6 +112,27 @@ class SshFiles(val connections: SshConnections) {
         connections.separateSftp(from.hostId) { sftp -> sftp.get(from.path, target.path) }
     }
 
+    /** Total size of a file or folder (null when it has more than [maxEntries] entries to look at). */
+    suspend fun size(path: String, maxEntries: Int = 20_000): Long? {
+        val at = parse(path)
+        return connections.separateSftp(at.hostId) { sftp ->
+            var seen = 0
+            fun walk(p: String): Long? {
+                if (++seen > maxEntries) return null
+                val attrs = stat(sftp, p) ?: return 0L
+                if (!attrs.isDir) return attrs.size
+                var total = 0L
+                @Suppress("UNCHECKED_CAST")
+                for (entry in sftp.ls(p) as java.util.Vector<ChannelSftp.LsEntry>) {
+                    if (entry.filename == "." || entry.filename == "..") continue
+                    total += if (entry.attrs.isDir) walk("$p/${entry.filename}") ?: return null else entry.attrs.size.also { if (++seen > maxEntries) return null }
+                }
+                return total
+            }
+            walk(at.path)
+        }
+    }
+
     /** Size and modification time of a file, to notice when it changed (or null if it's gone). */
     suspend fun stamp(path: String): String? {
         val at = parse(path)

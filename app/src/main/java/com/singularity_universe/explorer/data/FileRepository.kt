@@ -539,6 +539,18 @@ class FileRepository(private val context: Context) {
         }
     }
 
+    /** Total size of [path] (a file or folder anywhere), or null when it can't be measured quickly. */
+    suspend fun totalSize(path: String): Long? = withContext(Dispatchers.IO) {
+        runCatching {
+            when {
+                isSsh(path) -> sshFiles().size(path)
+                isAdbDevice(path) -> adbFiles().size(path)
+                isRestricted(path) -> null
+                else -> FileCopier.sizeOf(File(path))
+            }
+        }.getOrNull()
+    }
+
     /** Size and modification time of a remote file, to notice changes made elsewhere. */
     suspend fun remoteStamp(path: String): String? = withContext(Dispatchers.IO) {
         when {
