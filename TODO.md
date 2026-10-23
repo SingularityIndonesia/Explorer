@@ -12,6 +12,7 @@ Nothing queued; see the sections below.
 - [x] Remote previews: SSH videos stream with seeking; downloads, uploads and transfers use their own SFTP channel so browsing isn't blocked; edited pictures show their new version.
 - [x] Release build: signing from keystore.properties or EXPLORER_* variables; the classes JSch, libadb and the services load by name checked in the R8 output.
 - [x] CI: GitHub Actions runs the unit tests and builds the debug APK on every push and pull request.
+- [x] Compress on servers and devices: zip (or tar.gz when zip isn't installed, and on Android devices) runs on that machine.
 - [x] CI builds a signed release APK on pushes to main when the signing secrets are set (EXPLORER_KEYSTORE_BASE64, EXPLORER_STORE_PASSWORD, EXPLORER_KEY_ALIAS, EXPLORER_KEY_PASSWORD).
 - [x] Video editor: saving continues in the background with a notification (Hide in the progress dialog); remote videos still upload when it ends.
 - [x] Picture editor: pinch to zoom and pan while editing (any tool), with a Fit chip to go back.
@@ -42,7 +43,6 @@ Nothing queued; see the sections below.
 ## Archives
 
 - `.rar` (proprietary format; would need a dedicated library such as junrar) and password-protected 7z writing.
-- Compress files on servers (e.g. run `zip` there) instead of only this phone's files.
 
 ## Terminal
 

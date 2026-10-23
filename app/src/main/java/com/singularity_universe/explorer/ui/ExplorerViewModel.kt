@@ -252,11 +252,12 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Zips [paths] (files on this phone) into [name] beside the first of them. */
+    /** Compresses [paths] into [name] beside them: on this phone, or on their server or device. */
     fun compress(paths: List<String>, name: String) {
         runOperation(null) {
-            val zip = repo.compress(paths, parentOf(paths.first()), name)
-            message("Created ${zip.name}")
+            val created = if (repo.isRemote(paths.first())) repo.compressRemote(paths, name).substringAfterLast('/')
+            else repo.compress(paths, parentOf(paths.first()), name).name
+            message("Created $created")
         }
     }
 

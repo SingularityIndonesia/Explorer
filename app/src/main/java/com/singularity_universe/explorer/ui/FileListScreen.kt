@@ -172,8 +172,8 @@ fun FileListScreen(
                     onMove = { startTransfer(move = true) },
                     onRename = { renameTarget = it },
                     onInfo = { infoTarget = it },
-                    // Zipping works on this phone's own files (not servers or Android/data).
-                    onCompress = if (selectedItems.none { vm.repo.needsCopyToOpen(it.path) }) ({ compressing = selectedItems }) else null,
+                    // On this phone, or on the server or device the files are on (not Android/data).
+                    onCompress = if (vm.repo.canCompress(selectedItems.map { it.path })) ({ compressing = selectedItems }) else null,
                     isShortcut = { it.path in vm.shortcuts },
                     onToggleShortcut = { vm.toggleShortcut(it.path) },
                 )

@@ -14,6 +14,7 @@ import android.provider.MediaStore.Files.FileColumns
 import com.singularity_universe.explorer.remote.AdbFiles
 import com.singularity_universe.explorer.remote.AdbPath
 import com.singularity_universe.explorer.remote.RemoteAccessRequiredException
+import com.singularity_universe.explorer.remote.RemoteCommands
 import com.singularity_universe.explorer.remote.RemoteFiles
 import com.singularity_universe.explorer.remote.SshFiles
 import com.singularity_universe.explorer.remote.SshPath
@@ -445,6 +446,34 @@ class FileRepository(private val context: Context) {
             scan(written.map { it.path })
             folder
         }
+
+    /**
+     * Whether [paths] can be compressed where they are: on this phone, or all in one folder of one
+     * server or device (Android/data can't).
+     */
+    fun canCompress(paths: Collection<String>): Boolean = paths.isNotEmpty() && paths.none(::isRestricted) &&
+        (paths.none(::isRemote) || (paths.all(::isRemote) && paths.map(::remoteParent).distinct().size == 1))
+
+    /**
+     * Compresses [paths] (all in one folder of a server or device) on that machine, without
+     * downloading them: a zip if the server has `zip`, otherwise a .tar.gz (always on Android
+     * devices). Returns the archive's path.
+     */
+    suspend fun compressRemote(paths: List<String>, name: String): String = withContext(Dispatchers.IO) {
+        val folder = remoteParent(paths.first()) ?: throw IOException("Not on a server")
+        val base = name.removeSuffix(".zip").removeSuffix(".ZIP").ifEmpty { "Archive" }
+        val names = paths.map { it.trimEnd('/').substringAfterLast('/') }
+        val ssh = SshPath.parse(folder)
+        val result = if (ssh != null) {
+            sshFiles().connections.exec(ssh.hostId, RemoteCommands.compress(ssh.path, base, names, allowZip = true))
+        } else {
+            val adb = AdbPath.parse(folder) ?: throw IOException("Not on a server")
+            adbFiles().devices.exec(adb.deviceId, RemoteCommands.compress(adb.path, base, names, allowZip = false))
+        }
+        val created = RemoteCommands.created(result.output)
+            ?: throw IOException(result.output.lineSequence().lastOrNull { it.isNotBlank() } ?: "Couldn't compress")
+        "${folder.trimEnd('/')}/$created"
+    }
 
     /** Zips [paths] into a new archive called [name] in [destDir]. Returns the archive. */
     suspend fun compress(paths: List<String>, destDir: String, name: String): File = withContext(Dispatchers.IO) {
