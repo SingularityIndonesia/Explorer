@@ -66,15 +66,21 @@ object AudioPlayback {
     }
 
     /** Plays [files] as a queue, starting at [index]. [names] are shown until the files' own tags load. */
-    fun play(context: Context, files: List<File>, index: Int, names: List<String> = files.map { it.name }) {
+    fun play(context: Context, files: List<File>, index: Int, names: List<String> = files.map { it.name }) =
+        playUris(context, files.map { Uri.fromFile(it) to it.path }, index, names)
+
+    /**
+     * Plays a queue of addresses: `file://` on the phone, or `ssh://` on a server (streamed).
+     * Each is (address, id); [names] are shown until the files' own tags load.
+     */
+    fun playUris(context: Context, sources: List<Pair<Uri, String>>, index: Int, names: List<String>) {
         connect(context) { player ->
-            val items = files.mapIndexed { i, file ->
-                val uri = Uri.fromFile(file)
+            val items = sources.mapIndexed { i, (uri, id) ->
                 MediaItem.Builder()
-                    .setMediaId(file.path)
+                    .setMediaId(id)
                     .setUri(uri)
                     .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
-                    .setMediaMetadata(MediaMetadata.Builder().setTitle(names.getOrElse(i) { file.name }.substringBeforeLast('.')).build())
+                    .setMediaMetadata(MediaMetadata.Builder().setTitle(names.getOrElse(i) { id.substringAfterLast('/') }.substringBeforeLast('.')).build())
                     .build()
             }
             player.setMediaItems(items, index.coerceIn(0, items.lastIndex), 0L)

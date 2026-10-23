@@ -145,6 +145,16 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
                 val queue = siblings.filter { it.kind == FileKind.Audio && !repo.needsCopyToOpen(it.path) }.ifEmpty { listOf(item) }
                 AudioPlayback.play(getApplication(), queue.map { it.file }, queue.indexOfFirst { it.path == item.path }.coerceAtLeast(0))
             }
+            // On an SSH server the folder plays as a queue, streamed straight from the server.
+            item.kind == FileKind.Audio && repo.isSsh(item.path) -> {
+                val queue = siblings.filter { it.kind == FileKind.Audio && repo.isSsh(it.path) }.ifEmpty { listOf(item) }
+                AudioPlayback.playUris(
+                    getApplication(),
+                    queue.map { Uri.parse(it.path) to it.path },
+                    queue.indexOfFirst { it.path == item.path }.coerceAtLeast(0),
+                    queue.map { it.name },
+                )
+            }
             item.kind == FileKind.Audio -> viewModelScope.launch {
                 busy = true
                 try {
