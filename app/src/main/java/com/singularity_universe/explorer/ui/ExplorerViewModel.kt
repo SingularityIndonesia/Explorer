@@ -57,6 +57,8 @@ sealed interface Route {
     class Viewer(val items: List<FileItem>, val index: Int) : Route
     /** Read-only view of a text file, with an Edit button that opens the editor. */
     class TextPreview(val item: FileItem) : Route
+    /** Preview of a PDF, Word, PowerPoint or Excel file. */
+    class DocumentPreview(val item: FileItem) : Route
 }
 
 /** Files picked with "Copy to" / "Move to", waiting to be pasted into a folder. */
@@ -110,7 +112,8 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Opens a local file in the app: images and videos in the viewer (swiping through the other
-     * previewable files in [siblings]), and text in the text viewer. Files of unknown type are
+     * previewable files in [siblings]), documents (PDF, Word, PowerPoint, Excel) in the document
+     * preview, and text in the text viewer. Files of unknown type are
      * checked for text first. Anything else goes to [otherwise], usually another app.
      */
     fun openInApp(item: FileItem, siblings: List<FileItem>, otherwise: (FileItem) -> Unit) {
@@ -119,6 +122,7 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
                 val media = siblings.filter { it.isPreviewable }.ifEmpty { listOf(item) }
                 navigate(Route.Viewer(media, media.indexOfFirst { it.path == item.path }.coerceAtLeast(0)))
             }
+            documentKindOf(item.name) != null -> navigate(Route.DocumentPreview(item))
             item.isText -> navigate(Route.TextPreview(item))
             item.mimeType == "application/octet-stream" -> viewModelScope.launch {
                 if (withContext(Dispatchers.IO) { looksLikeText(item.file) }) navigate(Route.TextPreview(item))

@@ -61,6 +61,8 @@ dependencies {
     implementation(libs.bouncycastle.pkix)
     implementation(libs.jsch)
     testImplementation(libs.junit)
+    // The XML parser Android has built in, for the document reader tests.
+    testImplementation(libs.kxml2)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
