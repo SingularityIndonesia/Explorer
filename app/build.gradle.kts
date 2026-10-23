@@ -63,6 +63,9 @@ dependencies {
     testImplementation(libs.junit)
     // The XML parser Android has built in, for the document reader tests.
     testImplementation(libs.kxml2)
+    // A real SSH server for the key sign-in tests.
+    testImplementation(libs.sshd.core)
+    testImplementation(libs.eddsa)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

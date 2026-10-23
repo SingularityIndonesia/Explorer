@@ -44,6 +44,7 @@ class SshConnections private constructor(private val app: Context) {
     private class Live(val session: Session, val sftp: ChannelSftp, val home: String, val address: String)
 
     private val store = SshHostStore(app)
+    private val keyStore = SshKeyStore(app)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val knownHosts = File(app.noBackupFilesDir, "ssh/known_hosts")
     private val live = HashMap<String, Live>()
@@ -54,6 +55,58 @@ class SshConnections private constructor(private val app: Context) {
 
     /** Connection state per server id, observable by Compose. */
     val status = mutableStateMapOf<String, Status>()
+
+    /** Saved SSH keys, observable by Compose. */
+    val keys = mutableStateListOf<SshKey>().apply { addAll(keyStore.load()) }
+
+    init {
+        SshKeyTools.useBouncyCastle()
+    }
+
+    fun key(id: String?): SshKey? = id?.let { keys.firstOrNull { k -> k.id == it } }
+
+    fun addKey(key: SshKey) {
+        keys += key
+        keyStore.save(keys)
+    }
+
+    /** Deletes a key; servers that signed in with it go back to their password. */
+    fun removeKey(id: String) {
+        keys.removeAll { it.id == id }
+        keyStore.save(keys)
+        hosts.filter { it.keyId == id }.forEach { save(it.copy(keyId = null)) }
+    }
+
+    /**
+     * Adds [key] to the server's ~/.ssh/authorized_keys over the current sign-in (usually the
+     * password), then signs in to it with the key from now on.
+     */
+    suspend fun installKey(id: String, key: SshKey) {
+        val result = exec(id, SshKeyTools.installCommand(key.publicKey))
+        if (result.exitCode != 0 || !result.output.contains("installed")) {
+            throw IOException(result.output.trim().lines().lastOrNull()?.ifBlank { null } ?: "Couldn't add the key on the server")
+        }
+        host(id)?.let { save(it.copy(keyId = key.id)) }
+    }
+
+    /**
+     * Forgets the host keys remembered for the server's addresses, so the next connection trusts it
+     * again (after the server was reinstalled, or its keys were regenerated).
+     */
+    fun forgetHostKeys(id: String) {
+        val host = host(id) ?: return
+        disconnect(id)
+        scope.launch {
+            runCatching {
+                val repository = JSch().apply { setKnownHosts(knownHosts.path) }.hostKeyRepository
+                host.hosts.forEach { address ->
+                    val endpoint = Endpoint.parse(address) ?: return@forEach
+                    val port = endpoint.port ?: host.port
+                    repository.remove(if (port == 22) endpoint.host else "[${endpoint.host}]:$port", null)
+                }
+            }.onFailure { Log.w(TAG, "Couldn't forget host keys", it) }
+        }
+    }
 
     fun host(id: String): SshHost? = hosts.firstOrNull { it.id == id }
 
@@ -208,6 +261,10 @@ class SshConnections private constructor(private val app: Context) {
         knownHosts.parentFile?.mkdirs()
         synchronized(knownHosts) { if (!knownHosts.exists()) knownHosts.createNewFile() }
         val jsch = JSch().apply { setKnownHosts(knownHosts.path) }
+        // With a key, it's offered first (publickey); the password stays as a fallback.
+        key(host.keyId)?.let { key ->
+            jsch.addIdentity("explorer-${key.id}", key.privateKey.toByteArray(), null, key.passphrase.ifEmpty { null }?.toByteArray())
+        }
         return jsch.getSession(host.username, host.host, host.connectPort).apply {
             setPassword(host.password.toByteArray())
             userInfo = PasswordUserInfo(host.password)
@@ -232,9 +289,9 @@ class SshConnections private constructor(private val app: Context) {
         val text = e.message.orEmpty()
         return when {
             text.contains("Auth fail", ignoreCase = true) || text.contains("Auth cancel", ignoreCase = true) ->
-                "Wrong username or password"
+                "Wrong username, password or key"
             text.contains("HostKey has been changed", ignoreCase = true) || text.contains("reject HostKey", ignoreCase = true) ->
-                "The server's identity changed. If that's expected, remove and re-add the server."
+                "The server's identity changed. If that's expected, use Forget server identity in its menu."
             text.contains("timeout", ignoreCase = true) -> "The server didn't respond"
             e.cause is java.net.ConnectException || text.contains("refused", ignoreCase = true) ->
                 "Connection refused — is SSH running on that port?"

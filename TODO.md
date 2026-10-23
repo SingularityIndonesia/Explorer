@@ -2,11 +2,14 @@
 
 ## Next up
 
-- **SSH key login.** Import or generate keys (ed25519/RSA) for saved servers, as an alternative to passwords. Add a way to see and reset trusted host keys, for when a server's identity changes legitimately.
 - **Zip files.** Browse an archive like a folder, extract all or a selection, and compress selected files into a zip. Explorer recognises archives (`FileKind.Archive`) but hands them to other apps.
 - **Background transfers.** Run large copies to/from servers and devices in a foreground service with a progress notification and cancel, so they finish when the app is left (like `TerminalService`).
 - **Audio player.** In-app playback with a mini player, background play and lock-screen/media controls (Media3 session).
 - **Storage cleanup.** Large files, duplicates, old downloads and leftover APKs, like Google Files' "Clean" tab.
+
+## Done
+
+- [x] SSH key login: generate (Ed25519/RSA) or import keys, sign in with a key, install a key on a server, forget a server's identity.
 
 ## Terminal
 

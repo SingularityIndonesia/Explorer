@@ -26,6 +26,8 @@ data class SshHost(
     val startPath: String = "",
     /** Which of [hosts] is used now. */
     val activeHost: Int = 0,
+    /** Sign in with this saved SSH key ([SshKey.id]) instead of the password. */
+    val keyId: String? = null,
 ) {
     private val endpoint: Endpoint
         get() = Endpoint.parse(hosts.getOrElse(activeHost) { hosts.firstOrNull().orEmpty() }) ?: Endpoint("")
@@ -47,10 +49,7 @@ data class SshHost(
     }
 }
 
-/**
- * Persists SSH servers. Passwords are encrypted with an AES key that lives in the Android
- * Keystore, so they're never stored in plain text and can't be read off the device.
- */
+/** Persists SSH servers; passwords are encrypted with [Secrets]. */
 internal class SshHostStore(context: Context) {
     private val prefs = context.getSharedPreferences("ssh_hosts", Context.MODE_PRIVATE)
 
@@ -67,8 +66,9 @@ internal class SshHostStore(context: Context) {
                 port = o.getInt("port"),
                 activeHost = o.optInt("activeHost"),
                 username = o.getString("username"),
-                password = runCatching { decrypt(o.getString("password")) }.getOrDefault(""),
+                password = runCatching { Secrets.decrypt(o.getString("password")) }.getOrDefault(""),
                 startPath = o.optString("startPath"),
+                keyId = o.optString("keyId").ifEmpty { null },
             )
         }
     }.getOrDefault(emptyList())
@@ -84,12 +84,28 @@ internal class SshHostStore(context: Context) {
                     .put("activeHost", h.activeHost)
                     .put("port", h.port)
                     .put("username", h.username)
-                    .put("password", encrypt(h.password))
+                    .put("password", Secrets.encrypt(h.password))
                     .put("startPath", h.startPath)
+                    .put("keyId", h.keyId ?: "")
             )
         }
         prefs.edit().putString(KEY_HOSTS, array.toString()).apply()
     }
+
+    private companion object {
+        const val KEY_HOSTS = "hosts"
+    }
+}
+
+/**
+ * Encrypts saved secrets (passwords, private keys, passphrases) with an AES key that lives in the
+ * Android Keystore, so they're never stored in plain text and can't be read off the device.
+ */
+internal object Secrets {
+    private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+    private const val KEY_ALIAS = "explorer_ssh_passwords"
+    private const val TRANSFORMATION = "AES/GCM/NoPadding"
+    private const val IV_SIZE = 12
 
     private fun key(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
@@ -104,25 +120,17 @@ internal class SshHostStore(context: Context) {
         }.generateKey()
     }
 
-    private fun encrypt(plain: String): String {
+    fun encrypt(plain: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key()) }
         val bytes = cipher.iv + cipher.doFinal(plain.toByteArray())
         return Base64.encodeToString(bytes, Base64.NO_WRAP)
     }
 
-    private fun decrypt(encoded: String): String {
+    fun decrypt(encoded: String): String {
         val bytes = Base64.decode(encoded, Base64.NO_WRAP)
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
             init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes, 0, IV_SIZE))
         }
         return String(cipher.doFinal(bytes, IV_SIZE, bytes.size - IV_SIZE))
-    }
-
-    private companion object {
-        const val KEY_HOSTS = "hosts"
-        const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        const val KEY_ALIAS = "explorer_ssh_passwords"
-        const val TRANSFORMATION = "AES/GCM/NoPadding"
-        const val IV_SIZE = 12
     }
 }
