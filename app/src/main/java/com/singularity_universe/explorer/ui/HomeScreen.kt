@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.TabletAndroid
@@ -149,6 +150,7 @@ fun HomeScreen(vm: ExplorerViewModel, onOpenDrawer: () -> Unit) {
                 TileGrid(
                     listOf(
                         Tile(Icons.Outlined.StarBorder, "Starred", null) { vm.navigate(Route.Starred) },
+                        Tile(Icons.Outlined.CleaningServices, "Free up space", "Large files, duplicates…") { vm.navigate(Route.Clean) },
                     )
                 )
 

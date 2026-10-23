@@ -72,6 +72,7 @@ import com.singularity_universe.explorer.ui.AboutScreen
 import com.singularity_universe.explorer.ui.ArchiveScreen
 import com.singularity_universe.explorer.ui.AudioMiniPlayer
 import com.singularity_universe.explorer.ui.CategoryScreen
+import com.singularity_universe.explorer.ui.CleanScreen
 import com.singularity_universe.explorer.ui.DocumentPreviewScreen
 import com.singularity_universe.explorer.ui.ExplorerViewModel
 import com.singularity_universe.explorer.ui.FolderIcon
@@ -300,6 +301,7 @@ private fun Screen(vm: ExplorerViewModel, route: Route, onOpenDrawer: () -> Unit
                     Route.Remote -> RemoteScreen(vm)
                     Route.Settings -> SettingsScreen(vm)
                     Route.Trash -> TrashScreen(vm)
+                    Route.Clean -> CleanScreen(vm)
                     is Route.Folder -> FolderScreen(vm, route.path, route.highlight)
                     is Route.CategoryFiles -> CategoryScreen(vm, route.category)
                     is Route.Viewer -> MediaViewerScreen(vm, route.items, route.index)

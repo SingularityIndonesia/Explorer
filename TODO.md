@@ -2,14 +2,20 @@
 
 ## Next up
 
-- **Storage cleanup.** Large files, duplicates, old downloads and leftover APKs, like Google Files' "Clean" tab.
+Nothing queued; see the sections below.
 
 ## Done
 
+- [x] Free up space: large files, duplicates (size → quick hash → SHA-256), old downloads, installer files; deleting goes to Trash.
 - [x] Audio player: background playback (Media3 session: notification, lock screen, headphones), folder queue, mini player and Now playing sheet.
 - [x] Background transfers: copy/move queue in a foreground service with progress, Cancel and a summary notification.
 - [x] Zip files: browse like a folder, open entries in the app, extract all/folder/selection, compress a selection.
 - [x] SSH key login: generate (Ed25519/RSA) or import keys, sign in with a key, install a key on a server, forget a server's identity.
+
+## Cleanup
+
+- App caches and leftover folders of uninstalled apps (needs usage/storage access Android restricts).
+- Similar (not identical) photos, and blurry ones.
 
 ## Audio
 

@@ -354,6 +354,67 @@ class FileRepository(private val context: Context) {
         if (onDevices.isNotEmpty()) adbFiles().delete(onDevices)
     }
 
+    // ---- Storage cleanup ----
+
+    /** What Free up space found. Each list is biggest first. */
+    class CleanupReport(
+        val large: List<FileItem>,
+        val duplicates: List<List<FileItem>>,
+        val oldDownloads: List<FileItem>,
+        val apks: List<ApkFile>,
+    )
+
+    /** An installer file; [installed] when that version (or newer) of the app is on the phone. */
+    class ApkFile(val item: FileItem, val label: String?, val installed: Boolean)
+
+    /** Scans shared storage for space to free. [onStage] reports what it's doing (and 0..1 when known). */
+    suspend fun cleanupScan(onStage: (String, Float?) -> Unit = { _, _ -> }): CleanupReport = withContext(Dispatchers.IO) {
+        val bySize = "${FileColumns.SIZE} DESC"
+        onStage("Looking for large files", null)
+        val large = query("${FileColumns.SIZE} >= ?", arrayOf(LARGE_FILE.toString()), sort = bySize, limit = 300).filterNot { it.isDirectory }
+
+        onStage("Looking for old downloads", null)
+        val cutoff = (System.currentTimeMillis() - OLD_DOWNLOAD_DAYS * 24L * 3600 * 1000) / 1000
+        val oldDownloads = query(
+            "${FileColumns.RELATIVE_PATH} LIKE ? AND ${FileColumns.DATE_MODIFIED} < ? AND ${FileColumns.SIZE} > 0",
+            arrayOf("${Environment.DIRECTORY_DOWNLOADS}/%", cutoff.toString()),
+            sort = bySize,
+            limit = 500,
+        ).filterNot { it.isDirectory }
+
+        onStage("Looking for installer files", null)
+        val apks = query(
+            "(${FileColumns.MIME_TYPE} = ? OR ${FileColumns.DISPLAY_NAME} LIKE ?)",
+            arrayOf(APK_MIME, "%.apk"),
+            sort = bySize,
+            limit = 300,
+        ).filterNot { it.isDirectory }.map(::apkFile)
+
+        onStage("Looking for duplicates", 0f)
+        val candidates = query("${FileColumns.SIZE} >= ?", arrayOf(DUPLICATE_MIN.toString()), sort = bySize, limit = 20_000)
+            .filterNot { it.isDirectory }
+        val byPath = candidates.associateBy { it.path }
+        val duplicates = Duplicates.find(candidates.map { it.file }, minSize = DUPLICATE_MIN) { onStage("Looking for duplicates", it) }
+            .map { group -> group.mapNotNull { byPath[it.path] ?: runCatching { it.toFileItem() }.getOrNull() } }
+            .filter { it.size > 1 }
+
+        CleanupReport(large, duplicates, oldDownloads, apks)
+    }
+
+    private fun apkFile(item: FileItem): ApkFile {
+        val pm = context.packageManager
+        val info = runCatching { pm.getPackageArchiveInfo(item.path, 0) }.getOrNull()
+        val label = info?.applicationInfo?.let { app ->
+            app.sourceDir = item.path
+            app.publicSourceDir = item.path
+            runCatching { app.loadLabel(pm).toString() }.getOrNull()
+        }
+        val installed = info != null && runCatching {
+            pm.getPackageInfo(info.packageName, 0).longVersionCode >= info.longVersionCode
+        }.getOrDefault(false)
+        return ApkFile(item, label, installed)
+    }
+
     // ---- Zip files ----
 
     /** The phone's Downloads folder (where archives from servers are extracted). */
@@ -546,5 +607,9 @@ class FileRepository(private val context: Context) {
     private companion object {
         /** Remote copies kept for previews; Android may also clear them when space runs low. */
         const val MAX_REMOTE_CACHE = 500L * 1024 * 1024
+
+        const val LARGE_FILE = 100L * 1024 * 1024
+        const val DUPLICATE_MIN = 100L * 1024
+        const val OLD_DOWNLOAD_DAYS = 90
     }
 }

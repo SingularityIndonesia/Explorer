@@ -54,6 +54,8 @@ sealed interface Route {
     data object Remote : Route
     data object Settings : Route
     data object Trash : Route
+    /** Free up space: large files, duplicates, old downloads, installer files. */
+    data object Clean : Route
     /** [highlight] is a file inside the folder to scroll to and flash, e.g. after "Open with". */
     data class Folder(val path: String, val highlight: String? = null) : Route
     data class CategoryFiles(val category: Category) : Route
@@ -184,6 +186,42 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         runOperation(null) {
             val folder = repo.extractZip(local, archive.name, dest, only, base)
             message("Extracted to ${displayName(folder.parent ?: dest)}/${folder.name}")
+        }
+    }
+
+    // ---- Free up space ----
+
+    var cleanupReport by mutableStateOf<FileRepository.CleanupReport?>(null)
+        private set
+
+    /** While scanning: what's being looked at, and 0..1 when known. */
+    var cleanupStage by mutableStateOf<Pair<String, Float?>?>(null)
+        private set
+
+    fun scanCleanup() {
+        if (cleanupStage != null) return
+        cleanupStage = "Starting" to null
+        viewModelScope.launch {
+            try {
+                cleanupReport = repo.cleanupScan { stage, progress -> cleanupStage = stage to progress }
+            } catch (e: Exception) {
+                message(e.message ?: "Couldn't scan storage")
+            } finally {
+                cleanupStage = null
+            }
+        }
+    }
+
+    /** Moves the chosen files to Trash and takes them off the cleanup lists. */
+    fun deleteFromCleanup(paths: Set<String>) {
+        delete(paths)
+        cleanupReport = cleanupReport?.let { r ->
+            FileRepository.CleanupReport(
+                large = r.large.filterNot { it.path in paths },
+                duplicates = r.duplicates.map { g -> g.filterNot { it.path in paths } }.filter { it.size > 1 },
+                oldDownloads = r.oldDownloads.filterNot { it.path in paths },
+                apks = r.apks.filterNot { it.item.path in paths },
+            )
         }
     }
 
