@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Android
+import androidx.compose.material.icons.outlined.BlurOn
+import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Refresh
@@ -58,6 +60,8 @@ private enum class CleanSection(val title: String, val icon: ImageVector, val hi
     Duplicates("Duplicate files", Icons.Outlined.ContentCopy, "The same file stored more than once; the oldest copy stays unselected"),
     OldDownloads("Old downloads", Icons.Outlined.Download, "In Download and unchanged for 90 days"),
     Apks("Installer files", Icons.Outlined.Android, "APK files; installed apps don't need them"),
+    Similar("Similar photos", Icons.Outlined.Collections, "Shots that look alike (bursts, retakes); the sharpest of each group stays unselected"),
+    Blurry("Blurry photos", Icons.Outlined.BlurOn, "Photos that look out of focus"),
 }
 
 /** Free up space: what can be removed, by kind. Deleting moves files to Trash (kept for 30 days). */
@@ -143,11 +147,14 @@ private fun itemsOf(report: FileRepository.CleanupReport, section: CleanSection)
     CleanSection.Duplicates -> report.duplicates.flatten()
     CleanSection.OldDownloads -> report.oldDownloads
     CleanSection.Apks -> report.apks.map { it.item }
+    CleanSection.Similar -> report.similar.flatten()
+    CleanSection.Blurry -> report.blurry
 }
 
 /** What deleting would free: everything listed, except one copy of each duplicate. */
 private fun savingsOf(report: FileRepository.CleanupReport, section: CleanSection): Long = when (section) {
     CleanSection.Duplicates -> report.duplicates.sumOf { g -> g.drop(1).sumOf { it.size } }
+    CleanSection.Similar -> report.similar.sumOf { g -> g.drop(1).sumOf { it.size } }
     else -> itemsOf(report, section).sumOf { it.size }
 }
 
@@ -159,6 +166,7 @@ private fun SectionList(vm: ExplorerViewModel, report: FileRepository.CleanupRep
         mutableStateOf<Set<String>>(
             when (section) {
                 CleanSection.Duplicates -> report.duplicates.flatMap { it.drop(1) }.mapTo(HashSet()) { it.path }
+                CleanSection.Similar -> report.similar.flatMap { it.drop(1) }.mapTo(HashSet()) { it.path }
                 CleanSection.Apks -> report.apks.filter { it.installed }.mapTo(HashSet()) { it.item.path }
                 else -> emptySet()
             }
@@ -182,6 +190,19 @@ private fun SectionList(vm: ExplorerViewModel, report: FileRepository.CleanupRep
                 )
             }
             when (section) {
+                CleanSection.Similar -> report.similar.forEachIndexed { i, group ->
+                    item(key = "similar-$i") {
+                        Text(
+                            "${group.size} similar photos",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp),
+                        )
+                    }
+                    items(group, key = { "s-" + it.path }) { item ->
+                        FileRow(item, selected = item.path in selected, starred = false, onClick = { toggle(item) }, onLongClick = { open(item) })
+                    }
+                }
                 CleanSection.Duplicates -> report.duplicates.forEachIndexed { i, group ->
                     item(key = "header-$i") {
                         Text(

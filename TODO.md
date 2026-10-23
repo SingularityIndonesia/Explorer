@@ -12,6 +12,7 @@ Nothing queued; see the sections below.
 - [x] Remote previews: SSH videos stream with seeking; downloads, uploads and transfers use their own SFTP channel so browsing isn't blocked; edited pictures show their new version.
 - [x] Release build: signing from keystore.properties or EXPLORER_* variables; the classes JSch, libadb and the services load by name checked in the R8 output.
 - [x] CI: GitHub Actions runs the unit tests and builds the debug APK on every push and pull request.
+- [x] Free up space: similar photos (difference hash, sharpest kept) and blurry photos (variance of the Laplacian), from MediaStore thumbnails.
 - [x] Transfers from servers and devices show their total size (measured first: an SFTP walk, or du on Android devices).
 - [x] Compress on servers and devices: zip (or tar.gz when zip isn't installed, and on Android devices) runs on that machine.
 - [x] CI builds a signed release APK on pushes to main when the signing secrets are set (EXPLORER_KEYSTORE_BASE64, EXPLORER_STORE_PASSWORD, EXPLORER_KEY_ALIAS, EXPLORER_KEY_PASSWORD).
@@ -29,7 +30,6 @@ Nothing queued; see the sections below.
 ## Cleanup
 
 - App caches and leftover folders of uninstalled apps (needs usage/storage access Android restricts).
-- Similar (not identical) photos, and blurry ones.
 
 ## Audio
 

@@ -248,6 +248,8 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
                 duplicates = r.duplicates.map { g -> g.filterNot { it.path in paths } }.filter { it.size > 1 },
                 oldDownloads = r.oldDownloads.filterNot { it.path in paths },
                 apks = r.apks.filterNot { it.item.path in paths },
+                similar = r.similar.map { g -> g.filterNot { it.path in paths } }.filter { it.size > 1 },
+                blurry = r.blurry.filterNot { it.path in paths },
             )
         }
     }

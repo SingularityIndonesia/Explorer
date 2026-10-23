@@ -372,6 +372,9 @@ class FileRepository(private val context: Context) {
         val duplicates: List<List<FileItem>>,
         val oldDownloads: List<FileItem>,
         val apks: List<ApkFile>,
+        /** Groups of similar photos, sharpest first (the one to keep). */
+        val similar: List<List<FileItem>> = emptyList(),
+        val blurry: List<FileItem> = emptyList(),
     )
 
     /** An installer file; [installed] when that version (or newer) of the app is on the phone. */
@@ -408,7 +411,47 @@ class FileRepository(private val context: Context) {
             .map { group -> group.mapNotNull { byPath[it.path] ?: runCatching { it.toFileItem() }.getOrNull() } }
             .filter { it.size > 1 }
 
-        CleanupReport(large, duplicates, oldDownloads, apks)
+        val (similar, blurry) = photoReview(onStage)
+        CleanupReport(large, duplicates, oldDownloads, apks, similar, blurry)
+    }
+
+    /**
+     * Similar photos (bursts, retakes) and blurry ones, judged from MediaStore's small cached
+     * thumbnails rather than the photos themselves.
+     */
+    private suspend fun photoReview(onStage: (String, Float?) -> Unit): Pair<List<List<FileItem>>, List<FileItem>> {
+        onStage("Looking at photos", 0f)
+        val photos = query("${FileColumns.MEDIA_TYPE} = ?", arrayOf(FileColumns.MEDIA_TYPE_IMAGE.toString()), limit = PHOTO_REVIEW_LIMIT)
+            .filter { !it.isDirectory && it.mediaUri != null }
+        val hashes = ArrayList<Pair<FileItem, Long>>(photos.size)
+        val sharpness = HashMap<String, Double>()
+        photos.forEachIndexed { index, photo ->
+            runCatching {
+                val thumb = context.contentResolver.loadThumbnail(photo.mediaUri!!, android.util.Size(256, 256), null)
+                sharpness[photo.path] = PhotoSimilarity.sharpness(grayscale(thumb), thumb.width, thumb.height)
+                val tiny = android.graphics.Bitmap.createScaledBitmap(thumb, PhotoSimilarity.HASH_WIDTH, PhotoSimilarity.HASH_HEIGHT, true)
+                hashes += photo to PhotoSimilarity.dHash(grayscale(tiny))
+                if (tiny !== thumb) tiny.recycle()
+                thumb.recycle()
+            }
+            if (index % 25 == 0) onStage("Looking at photos", index.toFloat() / photos.size)
+        }
+        val similar = PhotoSimilarity.group(hashes).map { group -> group.sortedByDescending { sharpness[it.path] ?: 0.0 } }
+            .sortedByDescending { group -> group.drop(1).sumOf { it.size } }
+        // Screenshots are often flat on purpose; they're not "blurry photos".
+        val blurry = photos.filter { (sharpness[it.path] ?: Double.MAX_VALUE) < PhotoSimilarity.BLURRY_BELOW && !it.path.contains("/Screenshots/", ignoreCase = true) }
+            .sortedBy { sharpness[it.path] }
+        return similar to blurry
+    }
+
+    private fun grayscale(bitmap: android.graphics.Bitmap): IntArray {
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        for (i in pixels.indices) {
+            val c = pixels[i]
+            pixels[i] = (((c shr 16) and 0xFF) * 299 + ((c shr 8) and 0xFF) * 587 + (c and 0xFF) * 114) / 1000
+        }
+        return pixels
     }
 
     private fun apkFile(item: FileItem): ApkFile {
@@ -676,5 +719,6 @@ class FileRepository(private val context: Context) {
         const val LARGE_FILE = 100L * 1024 * 1024
         const val DUPLICATE_MIN = 100L * 1024
         const val OLD_DOWNLOAD_DAYS = 90
+        const val PHOTO_REVIEW_LIMIT = 3_000
     }
 }
