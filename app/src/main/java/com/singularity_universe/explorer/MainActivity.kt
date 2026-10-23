@@ -70,6 +70,7 @@ import com.singularity_universe.explorer.remote.RemoteConnection
 import com.singularity_universe.explorer.remote.SshConnections
 import com.singularity_universe.explorer.ui.AboutScreen
 import com.singularity_universe.explorer.ui.ArchiveScreen
+import com.singularity_universe.explorer.ui.AudioMiniPlayer
 import com.singularity_universe.explorer.ui.CategoryScreen
 import com.singularity_universe.explorer.ui.DocumentPreviewScreen
 import com.singularity_universe.explorer.ui.ExplorerViewModel
@@ -273,7 +274,12 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
                     Screen(vm, route, onOpenDrawer = { scope.launch { drawerState.open() } })
                 }
             }
-            TransferBar(Modifier.align(Alignment.BottomCenter))
+            Column(Modifier.align(Alignment.BottomCenter), horizontalAlignment = Alignment.CenterHorizontally) {
+                TransferBar(Modifier)
+                // Not over the photo viewer's controls, nor screens with their own button at the bottom.
+                val route = vm.backStack.last()
+                if (route !is Route.Viewer && route !is Route.TextPreview && route != Route.About) AudioMiniPlayer()
+            }
             SnackbarHost(
                 snackbar,
                 Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 72.dp),

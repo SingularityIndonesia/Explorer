@@ -2,14 +2,19 @@
 
 ## Next up
 
-- **Audio player.** In-app playback with a mini player, background play and lock-screen/media controls (Media3 session).
 - **Storage cleanup.** Large files, duplicates, old downloads and leftover APKs, like Google Files' "Clean" tab.
 
 ## Done
 
+- [x] Audio player: background playback (Media3 session: notification, lock screen, headphones), folder queue, mini player and Now playing sheet.
 - [x] Background transfers: copy/move queue in a foreground service with progress, Cancel and a summary notification.
 - [x] Zip files: browse like a folder, open entries in the app, extract all/folder/selection, compress a selection.
 - [x] SSH key login: generate (Ed25519/RSA) or import keys, sign in with a key, install a key on a server, forget a server's identity.
+
+## Audio
+
+- Play a whole remote folder as a queue (now a remote song is downloaded and played on its own).
+- Playlists, and resuming where you left off.
 
 ## Transfers
 

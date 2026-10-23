@@ -19,6 +19,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <!-- Copying and moving in the background, with a progress notification. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <!-- Playing music in the background. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
@@ -100,6 +102,17 @@
                 android:label="Edit"
                 android:windowSoftInputMode="adjustResize"
                 android:theme="@style/Theme.Explorer"/>
+
+        <!-- Audio playback: exported so the system's media controls (notification, lock screen,
+             Bluetooth) can reach the session. -->
+        <service
+                android:name=".audio.PlaybackService"
+                android:exported="true"
+                android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService"/>
+            </intent-filter>
+        </service>
 
         <service
                 android:name=".data.TransferService"

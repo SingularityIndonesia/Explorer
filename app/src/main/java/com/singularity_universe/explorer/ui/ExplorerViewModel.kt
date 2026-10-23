@@ -11,7 +11,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.singularity_universe.explorer.audio.AudioPlayback
 import com.singularity_universe.explorer.data.Category
+import com.singularity_universe.explorer.data.FileKind
 import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.FileRepository
 import com.singularity_universe.explorer.data.SortOrder
@@ -134,6 +136,21 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
             item.isPreviewable -> {
                 val media = siblings.filter { it.isPreviewable }.ifEmpty { listOf(item) }
                 navigate(Route.Viewer(media, media.indexOfFirst { it.path == item.path }.coerceAtLeast(0)))
+            }
+            // Audio plays in the background service, with the folder's other audio files as the queue.
+            item.kind == FileKind.Audio && !remote -> {
+                val queue = siblings.filter { it.kind == FileKind.Audio && !repo.needsCopyToOpen(it.path) }.ifEmpty { listOf(item) }
+                AudioPlayback.play(getApplication(), queue.map { it.file }, queue.indexOfFirst { it.path == item.path }.coerceAtLeast(0))
+            }
+            item.kind == FileKind.Audio -> viewModelScope.launch {
+                busy = true
+                try {
+                    AudioPlayback.play(getApplication(), listOf(repo.cachedCopy(item)), 0, listOf(item.name))
+                } catch (e: Exception) {
+                    message(e.message ?: "Couldn't download this file")
+                } finally {
+                    busy = false
+                }
             }
             documentKindOf(item.name) != null -> navigate(Route.DocumentPreview(item))
             item.isZip -> navigate(Route.Archive(item))
