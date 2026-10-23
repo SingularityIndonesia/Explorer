@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.SdStorage
 import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,6 +73,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
+import com.singularity_universe.explorer.SSHTerminalActivity
 import com.singularity_universe.explorer.data.AppItem
 import com.singularity_universe.explorer.data.Category
 import com.singularity_universe.explorer.data.FileItem
@@ -116,10 +118,19 @@ fun FolderScreen(vm: ExplorerViewModel, path: String, highlight: String? = null)
                 })
             }
         }
+    val context = LocalContext.current
     FileListScreen(
         vm = vm,
         title = vm.displayName(path),
         subtitle = subtitle,
+        actions = {
+            // On an SSH server: a terminal in this folder.
+            SshPath.parse(path)?.let { ssh ->
+                IconButton(onClick = { SSHTerminalActivity.start(context, ssh.hostId, directory = ssh.path) }) {
+                    Icon(Icons.Outlined.Terminal, "Open terminal here")
+                }
+            }
+        },
         items = if (error != null && data.value == null) emptyList() else data.value,
         refreshing = data.refreshing,
         onRefresh = data::refresh,

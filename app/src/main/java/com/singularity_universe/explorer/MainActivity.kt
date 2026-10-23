@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -212,6 +213,8 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
                                 name = host.name,
                                 icon = Icons.Outlined.Dns,
                                 connected = ssh.status[host.id] == SshConnections.Status.Connected,
+                                action = Icons.Outlined.Terminal to "Terminal",
+                                onAction = { go { SSHTerminalActivity.start(context, host.id) } },
                             ) { go { vm.goHome(); vm.openServer(host.id) } }
                         }
                         adbDevices.devices.forEach { device ->
@@ -219,7 +222,8 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
                                 name = device.name,
                                 icon = Icons.Outlined.Devices,
                                 connected = adbDevices.status[device.id] == AdbDevices.Status.Connected,
-                                onRemoteControl = { go { RemoteControlActivity.start(context, device.id) } },
+                                action = Icons.AutoMirrored.Outlined.ScreenShare to "Remote control",
+                                onAction = { go { RemoteControlActivity.start(context, device.id) } },
                             ) { go { vm.goHome(); vm.openDevice(device.id) } }
                         }
                     }
@@ -287,7 +291,9 @@ private fun RemoteDrawerItem(
     name: String,
     icon: ImageVector,
     connected: Boolean,
-    onRemoteControl: (() -> Unit)? = null,
+    /** An icon button next to the name (remote control, terminal) and its description. */
+    action: Pair<ImageVector, String>? = null,
+    onAction: () -> Unit = {},
     onClick: () -> Unit,
 ) {
     NavigationDrawerItem(
@@ -298,8 +304,8 @@ private fun RemoteDrawerItem(
                 if (connected) {
                     Text("Connected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
-                if (onRemoteControl != null) {
-                    IconButton(onClick = onRemoteControl) { Icon(Icons.AutoMirrored.Outlined.ScreenShare, "Remote control") }
+                if (action != null) {
+                    IconButton(onClick = onAction) { Icon(action.first, action.second) }
                 }
             }
         },

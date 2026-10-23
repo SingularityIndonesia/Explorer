@@ -1,0 +1,250 @@
+@checkpoint 1328 0 1
+  GNU nano 8.4                  fixtures/sample.txt
+first line
+héllo wörld — ✓ unicode
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa>
+        tabbed  line
+line 001 of the sample file
+line 002 of the sample file
+line 003 of the sample file
+line 004 of the sample file
+line 005 of the sample file
+line 006 of the sample file
+line 007 of the sample file
+line 008 of the sample file
+line 009 of the sample file
+line 010 of the sample file
+line 011 of the sample file
+line 012 of the sample file
+line 013 of the sample file
+line 014 of the sample file
+line 015 of the sample file
+line 016 of the sample file
+                               [ Read 63 lines ]
+^G Help      ^O Write Out ^F Where Is  ^K Cut       ^T Execute   ^C Location
+^X Exit      ^R Read File ^\ Replace   ^U Paste     ^J Justify   ^/ Go To Line
+@checkpoint 1519 6 3
+  GNU nano 8.4                  fixtures/sample.txt                   Modified
+first line
+héllo wörld — ✓ unicode
+<ended
+        tabbed  line
+line 001 of the sample file
+line 002 of the sample file
+line 003 of the sample file
+line 004 of the sample file
+line 005 of the sample file
+line 006 of the sample file
+line 007 of the sample file
+line 008 of the sample file
+line 009 of the sample file
+line 010 of the sample file
+line 011 of the sample file
+line 012 of the sample file
+line 013 of the sample file
+line 014 of the sample file
+line 015 of the sample file
+line 016 of the sample file
+                               [ Read 63 lines ]
+^G Help      ^O Write Out ^F Where Is  ^K Cut       ^T Execute   ^C Location
+^X Exit      ^R Read File ^\ Replace   ^U Paste     ^J Justify   ^/ Go To Line
+@checkpoint 1812 27 3
+  GNU nano 8.4                  fixtures/sample.txt                   Modified
+line 015 of the sample file
+line 016 of the sample file
+line 017 of the sample file
+line 018 of the sample file
+line 019 of the sample file
+line 020 of the sample file
+line 021 of the sample file
+line 022 of the sample file
+line 023 of the sample file
+line 024 of the sample file
+line 025 of the sample file
+line 026 of the sample file
+line 027 of the sample file
+line 028 of the sample file
+line 029 of the sample file
+line 030 of the sample file
+line 031 of the sample file
+line 032 of the sample file
+line 033 of the sample file
+line 034 of the sample file
+                               [ Read 63 lines ]
+^G Help      ^O Write Out ^F Where Is  ^K Cut       ^T Execute   ^C Location
+^X Exit      ^R Read File ^\ Replace   ^U Paste     ^J Justify   ^/ Go To Line
+@checkpoint 2332 22 2
+  GNU nano 8.4                  fixtures/sample.txt                   Modified
+first line
+new line typed in nano
+héllo wörld — ✓ unicode
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa>
+        tabbed  line
+line 001 of the sample file
+line 002 of the sample file
+line 003 of the sample file
+line 004 of the sample file
+line 005 of the sample file
+line 006 of the sample file
+line 007 of the sample file
+line 008 of the sample file
+line 009 of the sample file
+line 010 of the sample file
+line 011 of the sample file
+line 012 of the sample file
+line 013 of the sample file
+line 014 of the sample file
+line 015 of the sample file
+
+^G Help      ^O Write Out ^F Where Is  ^K Cut       ^T Execute   ^C Location
+^X Exit      ^R Read File ^\ Replace   ^U Paste     ^J Justify   ^/ Go To Line
+@checkpoint 2555 0 4
+  GNU nano 8.4                  fixtures/sample.txt                   Modified
+first line
+new line typed in nano
+new line typed in nano
+héllo wörld — ✓ unicode
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa>
+        tabbed  line
+line 001 of the sample file
+line 002 of the sample file
+line 003 of the sample file
+line 004 of the sample file
+line 005 of the sample file
+line 006 of the sample file
+line 007 of the sample file
+line 008 of the sample file
+line 009 of the sample file
+line 010 of the sample file
+line 011 of the sample file
+line 012 of the sample file
+line 013 of the sample file
+line 014 of the sample file
+
+^G Help      ^O Write Out ^F Where Is  ^K Cut       ^T Execute   ^C Location
+^X Exit      ^R Read File ^\ Replace   ^U Paste     ^J Justify   ^/ Go To Line
+@checkpoint 3673 0 11
+  GNU nano 8.4                  fixtures/sample.txt                   Modified
+line 030 of the sample file
+line 031 of the sample file
+line 032 of the sample file
+line 033 of the sample file
+line 034 of the sample file
+line 035 of the sample file
+line 036 of the sample file
+line 037 of the sample file
+line 038 of the sample file
+line 039 of the sample file
+line 040 of the sample file
+line 041 of the sample file
+line 042 of the sample file
+line 043 of the sample file
+line 044 of the sample file
+line 045 of the sample file
+line 046 of the sample file
+line 047 of the sample file
+line 048 of the sample file
+line 049 of the sample file
+
+^G Help      ^O Write Out ^F Where Is  ^K Cut       ^T Execute   ^C Location
+^X Exit      ^R Read File ^\ Replace   ^U Paste     ^J Justify   ^/ Go To Line
+@checkpoint 5328 0 1
+                               Main nano help text
+
+ The nano editor is designed to emulate the functionality and ease-of-use
+ of the UW Pico text editor.  There are four main sections of the editor.
+ The top line shows the program version, the current filename being
+ edited, and whether or not the file has been modified.  Next is the main
+ editor window showing the file being edited.  The status line is the
+ third line from the bottom and shows important messages.  The bottom two
+ lines show the most commonly used shortcuts in the editor.
+
+ Shortcuts are written as follows: Control-key sequences are notated with
+ a '^' and can be entered either by using the Ctrl key or pressing the Esc
+ key twice.  Meta-key sequences are notated with 'M-' and can be entered
+ using either the Alt, Cmd, or Esc key, depending on your keyboard setup.
+ Also, pressing Esc twice and then typing a three-digit decimal number
+ from 000 to 255 will enter the character with the corresponding value.
+ The following keystrokes are available in the main editor window.
+ Alternative keys are shown in parentheses:
+
+^G     (F1)      Display this help text
+^X     (F2)      Close the current buffer / Exit from nano
+
+^L Refresh   ^F Where Is  M-B Previous ^P Prev Line ^Y Prev Page M-\ First Line
+^X Close     ^B Where Was M-F Next     ^N Next Line ^V Next Page M-/ Last Line
+@checkpoint 6455 0 11
+  GNU nano 8.4                  fixtures/sample.txt                   Modified
+line 030 of the sample file
+line 031 of the sample file
+line 032 of the sample file
+line 033 of the sample file
+line 034 of the sample file
+line 035 of the sample file
+line 036 of the sample file
+line 037 of the sample file
+line 038 of the sample file
+line 039 of the sample file
+line 040 of the sample file
+line 041 of the sample file
+line 042 of the sample file
+line 043 of the sample file
+line 044 of the sample file
+line 045 of the sample file
+line 046 of the sample file
+line 047 of the sample file
+line 048 of the sample file
+line 049 of the sample file
+
+^G Help      ^O Write Out ^F Where Is  ^K Cut       ^T Execute   ^C Location
+^X Exit      ^R Read File ^\ Replace   ^U Paste     ^J Justify   ^/ Go To Line
+@checkpoint 6838 34 21
+  GNU nano 8.4                  fixtures/sample.txt                   Modified
+line 030 of the sample file
+line 031 of the sample file
+line 032 of the sample file
+line 033 of the sample file
+line 034 of the sample file
+line 035 of the sample file
+line 036 of the sample file
+line 037 of the sample file
+line 038 of the sample file
+line 039 of the sample file
+line 040 of the sample file
+line 041 of the sample file
+line 042 of the sample file
+line 043 of the sample file
+line 044 of the sample file
+line 045 of the sample file
+line 046 of the sample file
+line 047 of the sample file
+line 048 of the sample file
+line 049 of the sample file
+Write to File: fixtures/sample.txt
+^G Help             M-D DOS Format      M-A Append          M-B Backup File
+^C Cancel           M-M Mac Format      M-P Prepend         ^T Browse
+@checkpoint 7292 0 11
+  GNU nano 8.4                  fixtures/sample.txt
+line 030 of the sample file
+line 031 of the sample file
+line 032 of the sample file
+line 033 of the sample file
+line 034 of the sample file
+line 035 of the sample file
+line 036 of the sample file
+line 037 of the sample file
+line 038 of the sample file
+line 039 of the sample file
+line 040 of the sample file
+line 041 of the sample file
+line 042 of the sample file
+line 043 of the sample file
+line 044 of the sample file
+line 045 of the sample file
+line 046 of the sample file
+line 047 of the sample file
+line 048 of the sample file
+line 049 of the sample file
+                               [ Wrote 65 lines ]
+^G Help      ^O Write Out ^F Where Is  ^K Cut       ^T Execute   ^C Location
+^X Exit      ^R Read File ^\ Replace   ^U Paste     ^J Justify   ^/ Go To Line

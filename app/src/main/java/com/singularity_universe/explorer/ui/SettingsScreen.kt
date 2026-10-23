@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.outlined.ScreenShare
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
@@ -54,6 +55,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.singularity_universe.explorer.RemoteControlActivity
+import com.singularity_universe.explorer.SSHTerminalActivity
 import com.singularity_universe.explorer.remote.AdbDevice
 import com.singularity_universe.explorer.remote.AdbDevices
 import com.singularity_universe.explorer.remote.Endpoint
@@ -112,6 +114,7 @@ fun SettingsScreen(vm: ExplorerViewModel) {
                         leading = { Icon(Icons.Outlined.Dns, null) },
                         trailing = {
                             OverflowMenu {
+                                item("Terminal", Icons.Outlined.Terminal) { SSHTerminalActivity.start(context, host.id) }
                                 item("Edit", Icons.Outlined.Edit) { editing = host }
                                 item("Remove", Icons.Outlined.Delete) { ssh.remove(host.id) }
                             }

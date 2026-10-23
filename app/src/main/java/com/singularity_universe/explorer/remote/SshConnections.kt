@@ -14,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -164,19 +165,7 @@ class SshConnections private constructor(private val app: Context) {
         drop(id)
         status[id] = Status.Connecting
         try {
-            knownHosts.parentFile?.mkdirs()
-            if (!knownHosts.exists()) knownHosts.createNewFile()
-            val jsch = JSch().apply { setKnownHosts(knownHosts.path) }
-            val session = jsch.getSession(host.username, host.host, host.connectPort).apply {
-                setPassword(host.password.toByteArray())
-                userInfo = PasswordUserInfo(host.password)
-                // "ask" + PasswordUserInfo: trust a server the first time, refuse if its key changes.
-                setConfig("StrictHostKeyChecking", "ask")
-                setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password")
-                setServerAliveInterval(KEEPALIVE_MS)
-                setServerAliveCountMax(3)
-                connect(CONNECT_TIMEOUT_MS)
-            }
+            val session = newSession(host)
             val sftp = (session.openChannel("sftp") as ChannelSftp).apply { connect(CONNECT_TIMEOUT_MS) }
             val opened = Live(session, sftp, sftp.home, host.address)
             synchronized(live) { live[id] = opened }
@@ -190,6 +179,44 @@ class SshConnections private constructor(private val app: Context) {
             val message = friendlyError(e)
             status[id] = Status.Failed(message)
             throw IOException(message, e)
+        }
+    }
+
+    /**
+     * Opens a separate session to a saved server, for a caller that owns it (the terminal): it isn't
+     * shared, reused or closed by this class. Throws an [IOException] with a readable message.
+     */
+    suspend fun openSession(id: String): Session = withContext(Dispatchers.IO) {
+        val host = host(id) ?: throw IOException("This server was removed")
+        try {
+            newSession(host).also { session ->
+                // Cancelled while connecting: nobody will own this session, so close it.
+                if (!isActive) {
+                    session.disconnect()
+                    throw CancellationException()
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "SSH connect to ${host.host} failed", e)
+            throw IOException(friendlyError(e), e)
+        }
+    }
+
+    private fun newSession(host: SshHost): Session {
+        knownHosts.parentFile?.mkdirs()
+        synchronized(knownHosts) { if (!knownHosts.exists()) knownHosts.createNewFile() }
+        val jsch = JSch().apply { setKnownHosts(knownHosts.path) }
+        return jsch.getSession(host.username, host.host, host.connectPort).apply {
+            setPassword(host.password.toByteArray())
+            userInfo = PasswordUserInfo(host.password)
+            // "ask" + PasswordUserInfo: trust a server the first time, refuse if its key changes.
+            setConfig("StrictHostKeyChecking", "ask")
+            setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password")
+            setServerAliveInterval(KEEPALIVE_MS)
+            setServerAliveCountMax(3)
+            connect(CONNECT_TIMEOUT_MS)
         }
     }
 

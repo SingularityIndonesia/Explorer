@@ -1,0 +1,200 @@
+@checkpoint 100 16 1
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@checkpoint 358 16 5
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $ printf '\033[1;31mred\033[0m \033[38;5;208morange\033[0m \033[38
+;2;10;200;30mrgb\033[0m\n'
+red orange rgb
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@checkpoint 813 16 23
+row 19
+row 20
+row 21
+row 22
+row 23
+row 24
+row 25
+row 26
+row 27
+row 28
+row 29
+row 30
+row 31
+row 32
+row 33
+row 34
+row 35
+row 36
+row 37
+row 38
+row 39
+row 40
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $
+@checkpoint 967 16 23
+row 22
+row 23
+row 24
+row 25
+row 26
+row 27
+row 28
+row 29
+row 30
+row 31
+row 32
+row 33
+row 34
+row 35
+row 36
+row 37
+row 38
+row 39
+row 40
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $ printf 'abc\033[2D\033[1@X\033[P\n'
+aXc
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $
+@checkpoint 1132 16 23
+row 27
+row 28
+row 29
+row 30
+row 31
+row 32
+row 33
+row 34
+row 35
+row 36
+row 37
+row 38
+row 39
+row 40
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $ printf 'abc\033[2D\033[1@X\033[P\n'
+aXc
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $ printf '\033(0lqqk\nx  x\nmqqj\033(B\n'
+┌──┐
+│  │
+└──┘
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $
+@checkpoint 1293 16 23
+row 30
+row 31
+row 32
+row 33
+row 34
+row 35
+row 36
+row 37
+row 38
+row 39
+row 40
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $ printf 'abc\033[2D\033[1@X\033[P\n'
+aXc
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $ printf '\033(0lqqk\nx  x\nmqqj\033(B\n'
+┌──┐
+│  │
+└──┘
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $ printf '宽字符 wide 😀 end\n'
+宽字符 wide 😀 end
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $
+@checkpoint 1492 16 23
+row 32
+row 33
+row 34
+row 38
+row 39
+scrolled
+
+
+
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $ printf 'abc\033[2D\033[1@X\033[P\n'
+aXc
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $ printf '\033(0lqqk\nx  x\nmqqj\033(B\n'
+┌──┐
+│  │
+└──┘
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $ printf '宽字符 wide 😀 end\n'
+宽字符 wide 😀 end
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $ printf '\033[5;10r\033[10;1Hscrolled\n\n\n\033[r\033[24;1H'
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $
+@checkpoint 1605 16 1
+/tmp/claude-1000/-home-steve-Desktop-Explorer/f622dc8e-b40b-4404-8d5b-ae9108f217
+99/scratchpad $
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

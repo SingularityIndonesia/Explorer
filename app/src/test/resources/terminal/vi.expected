@@ -1,0 +1,150 @@
+@checkpoint 851 0 0
+first line
+new line typed in nano
+new line typed in nano
+h..llo w..rld ... ... unicode
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        tabbed  line
+line 001 of the sample file
+line 002 of the sample file
+line 003 of the sample file
+line 004 of the sample file
+line 005 of the sample file
+line 006 of the sample file
+line 007 of the sample file
+line 008 of the sample file
+line 009 of the sample file
+line 010 of the sample file
+line 011 of the sample file
+line 012 of the sample file
+line 013 of the sample file
+line 014 of the sample file
+line 015 of the sample file
+line 016 of the sample file
+line 017 of the sample file
+- fixtures/sample.txt 1/65 1%
+@checkpoint 1083 33 2
+first line
+new line typed in nano
+new line typed in nano vi was here
+h..llo w..rld ... ... unicode
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        tabbed  line
+line 001 of the sample file
+line 002 of the sample file
+line 003 of the sample file
+line 004 of the sample file
+line 005 of the sample file
+line 006 of the sample file
+line 007 of the sample file
+line 008 of the sample file
+line 009 of the sample file
+line 010 of the sample file
+line 011 of the sample file
+line 012 of the sample file
+line 013 of the sample file
+line 014 of the sample file
+line 015 of the sample file
+line 016 of the sample file
+line 017 of the sample file
+- fixtures/sample.txt [Modified] 3/65 4%
+@checkpoint 1835 0 11
+line 048 of the sample file
+line 049 of the sample file
+line 050 of the sample file
+line 051 of the sample file
+line 052 of the sample file
+line 053 of the sample file
+line 054 of the sample file
+line 055 of the sample file
+line 056 of the sample file
+line 057 of the sample file
+line 058 of the sample file
+line 059 of the sample file
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+- fixtures/sample.txt [Modified] 65/65 100%
+@checkpoint 3169 13 0
+inserted above
+first line
+new line typed in nano
+new line typed in nano vi was here
+h..llo w..rld ... ... unicode
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        tabbed  line
+line 001 of the sample file
+line 002 of the sample file
+line 003 of the sample file
+line 004 of the sample file
+line 005 of the sample file
+line 006 of the sample file
+line 007 of the sample file
+line 008 of the sample file
+line 009 of the sample file
+line 010 of the sample file
+line 011 of the sample file
+line 012 of the sample file
+line 013 of the sample file
+line 014 of the sample file
+line 015 of the sample file
+line 016 of the sample file
+- fixtures/sample.txt [Modified] 1/66 1%
+@checkpoint 4149 0 1
+first line
+inserted above
+new line typed in nano
+new line typed in nano vi was here
+h..llo w..rld ... ... unicode
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        tabbed  line
+line 001 of the sample file
+line 002 of the sample file
+line 003 of the sample file
+line 004 of the sample file
+line 005 of the sample file
+line 006 of the sample file
+line 007 of the sample file
+line 008 of the sample file
+line 009 of the sample file
+line 010 of the sample file
+line 011 of the sample file
+line 012 of the sample file
+line 013 of the sample file
+line 014 of the sample file
+line 015 of the sample file
+line 016 of the sample file
+- fixtures/sample.txt [Modified] 2/66 3%
+@checkpoint 4215 0 1
+first line
+inserted above
+new line typed in nano
+new line typed in nano vi was here
+h..llo w..rld ... ... unicode
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        tabbed  line
+line 001 of the sample file
+line 002 of the sample file
+line 003 of the sample file
+line 004 of the sample file
+line 005 of the sample file
+line 006 of the sample file
+line 007 of the sample file
+line 008 of the sample file
+line 009 of the sample file
+line 010 of the sample file
+line 011 of the sample file
+line 012 of the sample file
+line 013 of the sample file
+line 014 of the sample file
+line 015 of the sample file
+line 016 of the sample file
+bad option: nu

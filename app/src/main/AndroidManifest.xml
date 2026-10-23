@@ -13,6 +13,12 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Remote access pairing: the code is typed into a notification while Settings stays open. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- SSH terminal: stays connected in the background (foreground service), and awake while the
+         screen is off (wake lock), when the user allows it to skip battery optimization. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
     <application
             android:name=".ExplorerApp"
@@ -58,6 +64,19 @@
                 android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
                 android:theme="@style/Theme.Explorer"/>
 
+        <!-- SSH terminal: its own task (one per server) holding its own SSH session. configChanges
+             keeps the screen and the session through rotation, resizing and keyboards. -->
+        <activity
+                android:name=".SSHTerminalActivity"
+                android:exported="false"
+                android:label="Terminal"
+                android:taskAffinity="com.singularity_universe.explorer.terminal"
+                android:documentLaunchMode="intoExisting"
+                android:resizeableActivity="true"
+                android:windowSoftInputMode="adjustResize|stateAlwaysVisible"
+                android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
+                android:theme="@style/Theme.Explorer"/>
+
         <!-- Text editor: adjustResize keeps the cursor above the keyboard. -->
         <activity
                 android:name=".TextEditorActivity"
@@ -65,6 +84,15 @@
                 android:label="Edit"
                 android:windowSoftInputMode="adjustResize"
                 android:theme="@style/Theme.Explorer"/>
+
+        <service
+                android:name=".remote.TerminalService"
+                android:exported="false"
+                android:foregroundServiceType="specialUse">
+            <property
+                    android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                    android:value="Keeps the user's interactive SSH terminal sessions connected while the app is in the background."/>
+        </service>
 
         <receiver
                 android:name=".remote.PairingReceiver"

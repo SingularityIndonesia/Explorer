@@ -100,6 +100,8 @@ fun FileListScreen(
     subtitle: (@Composable () -> Unit)? = null,
     header: @Composable () -> Unit = {},
     topBar: (@Composable () -> Unit)? = null,
+    /** Extra buttons at the start of the top bar's actions (e.g. a server folder's terminal). */
+    actions: @Composable () -> Unit = {},
 ) {
     val context = LocalContext.current
     var selected by remember { mutableStateOf(emptySet<String>()) }
@@ -185,6 +187,7 @@ fun FileListScreen(
                         }
                     },
                     actions = {
+                        actions()
                         IconButton(onClick = { vm.navigate(Route.Search) }) { Icon(Icons.Default.Search, "Search") }
                         IconButton(onClick = { vm.updateGridView(!vm.gridView) }) {
                             Icon(
