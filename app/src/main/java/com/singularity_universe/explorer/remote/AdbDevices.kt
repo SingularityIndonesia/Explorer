@@ -1,5 +1,6 @@
 package com.singularity_universe.explorer.remote
 
+import com.singularity_universe.explorer.data.CopyProgress
 import android.content.Context
 import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
@@ -195,9 +196,11 @@ class AdbDevices private constructor(private val app: Context) {
 
     suspend fun exec(id: String, command: String): ShellResult = withStream(id, shellService(command)) { it.readShellResult() }
 
-    suspend fun pull(id: String, path: String, destination: File) = withStream(id, "sync:") { it.syncRecv(path, destination) }
+    suspend fun pull(id: String, path: String, destination: File, progress: CopyProgress? = null) =
+        withStream(id, "sync:") { it.syncRecv(path, destination, progress) }
 
-    suspend fun push(id: String, source: File, path: String) = withStream(id, "sync:") { it.syncSend(source, path) }
+    suspend fun push(id: String, source: File, path: String, progress: CopyProgress? = null) =
+        withStream(id, "sync:") { it.syncSend(source, path, progress) }
 
     /**
      * Opens a long-lived stream (e.g. remote control's video) on the device's shared connection.

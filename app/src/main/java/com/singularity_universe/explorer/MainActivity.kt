@@ -390,17 +390,23 @@ private fun TransferBar(modifier: Modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "${if (progress.request.move) "Moving" else "Copying"} ${progress.done + 1} of ${progress.total} to ${progress.request.destName}",
+                        Transfers.title(progress),
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(progress.current, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "${progress.current} · ${Transfers.amount(context, progress)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 TextButton(onClick = Transfers::cancel) { Text("Cancel") }
             }
             LinearProgressIndicator(
-                progress = { (progress.done + 0.5f) / progress.total },
+                progress = { Transfers.fraction(progress) },
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp, end = 8.dp),
             )
         }

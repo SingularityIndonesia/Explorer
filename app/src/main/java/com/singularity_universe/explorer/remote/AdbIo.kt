@@ -1,5 +1,6 @@
 package com.singularity_universe.explorer.remote
 
+import com.singularity_universe.explorer.data.CopyProgress
 import io.github.muntashirakon.adb.AdbStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -52,8 +53,8 @@ private fun ByteArrayOutputStream.tail(): String {
 
 private const val SYNC_CHUNK = 64 * 1024
 
-/** Downloads [path] into [destination]. */
-internal fun AdbStream.syncRecv(path: String, destination: File) {
+/** Downloads [path] into [destination], reporting bytes to [progress] (which can stop it). */
+internal fun AdbStream.syncRecv(path: String, destination: File, progress: CopyProgress? = null) {
     val input = openInputStream()
     val output = openOutputStream()
     output.writeRequest("RECV", path.toByteArray())
@@ -62,7 +63,11 @@ internal fun AdbStream.syncRecv(path: String, destination: File) {
         while (true) {
             val (id, length) = input.readHeader()
             when (id) {
-                "DATA" -> file.write(input.readExactly(length))
+                "DATA" -> {
+                    file.write(input.readExactly(length))
+                    progress?.add(length.toLong())
+                    progress?.check()
+                }
                 "DONE" -> break
                 "FAIL" -> throw IOException(String(input.readExactly(length)))
                 else -> throw IOException("Unexpected reply \"$id\" while downloading")
@@ -72,8 +77,8 @@ internal fun AdbStream.syncRecv(path: String, destination: File) {
     output.writeRequest("QUIT", ByteArray(0))
 }
 
-/** Uploads [source] to [path] (created, or replaced if it exists). */
-internal fun AdbStream.syncSend(source: File, path: String) {
+/** Uploads [source] to [path] (created, or replaced if it exists), reporting bytes to [progress]. */
+internal fun AdbStream.syncSend(source: File, path: String, progress: CopyProgress? = null) {
     val input = openInputStream()
     val output = openOutputStream()
     // Regular file, rw-r--r--.
@@ -84,6 +89,8 @@ internal fun AdbStream.syncSend(source: File, path: String) {
             val read = file.read(buffer)
             if (read < 0) break
             output.writeRequest("DATA", buffer, read)
+            progress?.add(read.toLong())
+            progress?.check()
         }
     }
     output.writeHeader("DONE", (source.lastModified() / 1000).toInt())

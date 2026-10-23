@@ -3,6 +3,9 @@ package com.singularity_universe.explorer.remote
 import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.SftpATTRS
 import com.jcraft.jsch.SftpException
+import com.jcraft.jsch.SftpProgressMonitor
+import com.singularity_universe.explorer.data.CopyCancelledException
+import com.singularity_universe.explorer.data.CopyProgress
 import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.mimeTypeOf
 import java.io.File
@@ -92,13 +95,13 @@ class SshFiles(val connections: SshConnections) {
     }
 
     /** Downloads a file or folder into [localDir], picking a free name. Returns the local copy. */
-    suspend fun download(source: String, localDir: File): File {
+    suspend fun download(source: String, localDir: File, progress: CopyProgress? = null): File {
         val from = parse(source)
         var target = File(localDir, from.name)
         var i = 1
         while (target.exists()) target = File(localDir, numbered(from.name, i++))
         // Transfers use a channel of their own, so browsing the server isn't blocked meanwhile.
-        connections.separateSftp(from.hostId) { sftp -> downloadRecursively(sftp, from.path, target) }
+        connections.separateSftp(from.hostId) { sftp -> downloadRecursively(sftp, from.path, target, progress) }
         return target
     }
 
@@ -122,11 +125,11 @@ class SshFiles(val connections: SshConnections) {
     }
 
     /** Uploads a local file or folder into [destDir] on the server. Returns the remote path. */
-    suspend fun upload(local: File, destDir: String): String {
+    suspend fun upload(local: File, destDir: String, progress: CopyProgress? = null): String {
         val dest = parse(destDir)
         return connections.separateSftp(dest.hostId) { sftp ->
             val target = uniqueTarget(sftp, dest, local.name)
-            uploadRecursively(sftp, local, target.path)
+            uploadRecursively(sftp, local, target.path, progress)
             target.toString()
         }
     }
@@ -169,26 +172,48 @@ class SshFiles(val connections: SshConnections) {
         }
     }
 
-    private fun downloadRecursively(sftp: ChannelSftp, path: String, target: File) {
+    private fun downloadRecursively(sftp: ChannelSftp, path: String, target: File, progress: CopyProgress?) {
         if (sftp.stat(path).isDir) {
             target.mkdirs()
             sftp.ls(path).forEach { entry ->
                 if (entry.filename != "." && entry.filename != "..") {
-                    downloadRecursively(sftp, "$path/${entry.filename}", File(target, entry.filename))
+                    downloadRecursively(sftp, "$path/${entry.filename}", File(target, entry.filename), progress)
                 }
             }
         } else {
+            progress?.check()
             target.parentFile?.mkdirs()
-            sftp.get(path, target.path)
+            sftp.get(path, target.path, monitor(progress))
+            if (progress?.cancelled == true) {
+                target.delete()
+                throw CopyCancelledException()
+            }
         }
     }
 
-    private fun uploadRecursively(sftp: ChannelSftp, local: File, path: String) {
+    private fun uploadRecursively(sftp: ChannelSftp, local: File, path: String, progress: CopyProgress?) {
         if (local.isDirectory) {
             sftp.mkdir(path)
-            local.listFiles().orEmpty().forEach { uploadRecursively(sftp, it, "$path/${it.name}") }
+            local.listFiles().orEmpty().forEach { uploadRecursively(sftp, it, "$path/${it.name}", progress) }
         } else {
-            sftp.put(local.path, path)
+            progress?.check()
+            sftp.put(local.path, path, monitor(progress), ChannelSftp.OVERWRITE)
+            if (progress?.cancelled == true) {
+                runCatching { sftp.rm(path) }
+                throw CopyCancelledException()
+            }
+        }
+    }
+
+    /** Reports transferred bytes; returning false makes JSch stop in the middle of the file. */
+    private fun monitor(progress: CopyProgress?): SftpProgressMonitor? = progress?.let {
+        object : SftpProgressMonitor {
+            override fun init(op: Int, src: String?, dest: String?, max: Long) = Unit
+            override fun count(count: Long): Boolean {
+                it.add(count)
+                return !it.cancelled
+            }
+            override fun end() = Unit
         }
     }
 }

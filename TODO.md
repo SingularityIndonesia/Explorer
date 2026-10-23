@@ -6,6 +6,7 @@ Nothing queued; see the sections below.
 
 ## Done
 
+- [x] Transfer progress in bytes (350 MB of 1.2 GB), Cancel stops mid-file and removes the partial copy, queued count shown.
 - [x] Editing files in Android/data (saved back over the phone's own Wireless debugging connection); the text editor pauses saving when the file changed elsewhere (Reload theirs / Keep mine).
 - [x] Remote previews: SSH videos stream with seeking; downloads, uploads and transfers use their own SFTP channel so browsing isn't blocked; edited pictures show their new version.
 - [x] Release build: signing from keystore.properties or EXPLORER_* variables; the classes JSch, libadb and the services load by name checked in the R8 output.
@@ -29,8 +30,8 @@ Nothing queued; see the sections below.
 
 ## Transfers
 
-- Byte-level progress for big single files (now it's per item), and cancelling in the middle of a file.
-- Show queued transfers, not only the current one.
+- Copying to and from Android/data runs as shell commands: no byte progress or mid-file cancel there.
+- Total size for transfers from servers (now only bytes copied are shown; the total needs a remote size scan).
 
 ## Archives
 

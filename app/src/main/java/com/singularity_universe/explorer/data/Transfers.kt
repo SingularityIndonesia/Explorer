@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.drawable.Icon
 import android.os.IBinder
+import android.text.format.Formatter
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,8 +36,20 @@ import kotlinx.coroutines.launch
 object Transfers {
     class Request(val paths: List<String>, val destDir: String, val destName: String, val move: Boolean)
 
-    /** The request being worked on: [done] of [total] items finished, [current] being copied now. */
-    data class Progress(val request: Request, val done: Int, val total: Int, val current: String)
+    /**
+     * The request being worked on: [done] of [total] items finished, [current] being copied now,
+     * [bytes] copied of [totalBytes] (0 when unknown: some sources are remote), and [queued] more
+     * requests waiting.
+     */
+    data class Progress(
+        val request: Request,
+        val done: Int,
+        val total: Int,
+        val current: String,
+        val bytes: Long = 0,
+        val totalBytes: Long = 0,
+        val queued: Int = 0,
+    )
 
     /** A request finished: all of it, or [error] after [done] items, or [cancelled] by the user. */
     class Finished(val request: Request, val done: Int, val error: String?, val cancelled: Boolean)
@@ -51,6 +64,7 @@ object Transfers {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var worker: Job? = null
     @Volatile private var cancelled = false
+    @Volatile private var copying: CopyProgress? = null
 
     val busy: Boolean get() = synchronized(queue) { queue.isNotEmpty() } || worker?.isActive == true
 
@@ -64,9 +78,10 @@ object Transfers {
         if (worker?.isActive != true) worker = scope.launch { work(app) }
     }
 
-    /** Stops after the item being copied now (a file mid-copy can't be interrupted safely). */
+    /** Stops now: in the middle of the file being copied (its partial copy is removed). */
     fun cancel() {
         cancelled = true
+        copying?.cancelled = true
         synchronized(queue) { queue.clear() }
     }
 
@@ -76,21 +91,41 @@ object Transfers {
             cancelled = false
             var done = 0
             var error: String? = null
+            val bytes = CopyProgress()
+            copying = bytes
+            // A size to show progress against, when every source is on this phone.
+            val totalBytes = if (request.paths.none(repo::needsCopyToOpen)) request.paths.sumOf { FileCopier.sizeOf(File(it)) } else 0L
+            fun publish(current: String) {
+                progress = Progress(request, done, request.paths.size, current, bytes.bytes, totalBytes, synchronized(queue) { queue.size })
+                TransferService.update(app)
+            }
             for (path in request.paths) {
                 if (cancelled) break
-                progress = Progress(request, done, request.paths.size, path.substringAfterLast('/'))
-                TransferService.update(app)
+                val name = path.substringAfterLast('/')
+                publish(name)
+                // Byte counts arrive from the copy thread; refresh the bar and notification meanwhile.
+                val ticker = scope.launch {
+                    while (true) {
+                        kotlinx.coroutines.delay(500)
+                        publish(name)
+                    }
+                }
                 try {
-                    repo.transfer(listOf(path), request.destDir, request.move)
+                    repo.transfer(listOf(path), request.destDir, request.move, bytes)
                     done++
                 } catch (e: CancellationException) {
                     throw e
+                } catch (e: CopyCancelledException) {
+                    break
                 } catch (e: Exception) {
                     Log.w("Explorer", "Transfer failed", e)
                     error = e.message ?: "Something went wrong"
                     break
+                } finally {
+                    ticker.cancel()
                 }
             }
+            copying = null
             val result = Finished(request, done, error, cancelled && error == null && done < request.paths.size)
             _finished.tryEmit(result)
             TransferService.finished(app, result)
@@ -102,6 +137,24 @@ object Transfers {
             it()
         }
     }
+
+    /** "Copying 2 of 5 to Mac · 1 more queued". */
+    fun title(progress: Progress): String {
+        val verb = if (progress.request.move) "Moving" else "Copying"
+        val queued = if (progress.queued > 0) " · ${progress.queued} more queued" else ""
+        return "$verb ${progress.done + 1} of ${progress.total} to ${progress.request.destName}$queued"
+    }
+
+    /** "350 MB of 1.2 GB", or "350 MB" when the total isn't known. */
+    fun amount(context: Context, progress: Progress): String {
+        val done = Formatter.formatShortFileSize(context, progress.bytes)
+        return if (progress.totalBytes > 0) "$done of ${Formatter.formatShortFileSize(context, progress.totalBytes)}" else done
+    }
+
+    /** 0..1 by bytes when the total is known, otherwise by items. */
+    fun fraction(progress: Progress): Float =
+        if (progress.totalBytes > 0) (progress.bytes.toFloat() / progress.totalBytes).coerceIn(0f, 1f)
+        else (progress.done + 0.5f) / progress.total
 
     fun summary(result: Finished): String {
         val verb = if (result.request.move) "Moved" else "Copied"
@@ -187,11 +240,13 @@ class TransferService : Service() {
             if (progress == null) {
                 return builder.setContentTitle("Preparing…").setProgress(0, 0, true).build()
             }
-            val verb = if (progress.request.move) "Moving" else "Copying"
             return builder
-                .setContentTitle("$verb ${progress.done + 1} of ${progress.total} to ${progress.request.destName}")
-                .setContentText(File(progress.current).name)
-                .setProgress(progress.total, progress.done, false)
+                .setContentTitle(Transfers.title(progress))
+                .setContentText("${File(progress.current).name} · ${Transfers.amount(context, progress)}")
+                .apply {
+                    if (progress.totalBytes > 0) setProgress(1000, (progress.bytes * 1000 / progress.totalBytes).toInt().coerceIn(0, 1000), false)
+                    else setProgress(progress.total, progress.done, false)
+                }
                 .build()
         }
     }

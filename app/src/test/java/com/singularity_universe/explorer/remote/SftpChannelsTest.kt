@@ -12,6 +12,7 @@ import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -91,6 +92,40 @@ class SftpChannelsTest {
             browse.disconnect()
         } finally {
             session.disconnect()
+        }
+    }
+
+    /** What mid-file cancel relies on: a monitor returning false stops JSch without an error. */
+    @Test
+    fun monitorStopsATransferMidFile() {
+        val bytes = Random(9).nextBytes(6_000_000)
+        File(root, "video.mp4").writeBytes(bytes)
+        val local = Files.createTempFile("partial", ".mp4").toFile()
+        val upload = Files.createTempFile("up", ".bin").toFile().apply { writeBytes(bytes) }
+        val session = session()
+        try {
+            val sftp = channel(session)
+            var seen = 0L
+            val stopAfterFirst = object : com.jcraft.jsch.SftpProgressMonitor {
+                override fun init(op: Int, src: String?, dest: String?, max: Long) = Unit
+                override fun count(count: Long): Boolean {
+                    seen += count
+                    return false
+                }
+                override fun end() = Unit
+            }
+            sftp.get("/video.mp4", local.path, stopAfterFirst)
+            assertTrue("download stopped early (${local.length()} bytes)", local.length() < bytes.size)
+            seen = 0
+            sftp.put(upload.path, "/uploaded.bin", stopAfterFirst, ChannelSftp.OVERWRITE)
+            assertTrue("upload stopped early", File(root, "uploaded.bin").length() < bytes.size)
+            // The channel is still usable afterwards (the next transfer works).
+            assertEquals(bytes.size.toLong(), sftp.stat("/video.mp4").size)
+            sftp.disconnect()
+        } finally {
+            session.disconnect()
+            local.delete()
+            upload.delete()
         }
     }
 }

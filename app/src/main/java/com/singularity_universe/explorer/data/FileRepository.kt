@@ -254,13 +254,13 @@ class FileRepository(private val context: Context) {
         if (failed > 0) throw IOException("Couldn't delete $failed item(s)")
     }
 
-    suspend fun transfer(paths: Collection<String>, destDir: String, move: Boolean): Unit =
+    suspend fun transfer(paths: Collection<String>, destDir: String, move: Boolean, progress: CopyProgress? = null): Unit =
         withContext(Dispatchers.IO) {
             val dest = File(destDir)
             val scanTargets = mutableListOf<String>()
             for (path in paths) {
                 if (isRemote(path) || isRemote(destDir)) {
-                    scanTargets += transferRemote(path, destDir, move)
+                    scanTargets += transferRemote(path, destDir, move, progress)
                     continue
                 }
                 val src = File(path)
@@ -277,9 +277,18 @@ class FileRepository(private val context: Context) {
                 }
                 val target = uniqueTarget(dest, src.name)
                 if (move) scanTargets += filesUnder(src)
+                val size = if (move) FileCopier.sizeOf(src) else 0L
                 val renamed = move && src.renameTo(target)
-                if (!renamed) {
-                    if (!src.copyRecursively(target)) throw IOException("Couldn't copy ${src.name}")
+                if (renamed) {
+                    progress?.add(size)
+                } else {
+                    try {
+                        FileCopier.copy(src, target, progress)
+                    } catch (e: CopyCancelledException) {
+                        // Cancelled: nothing half-copied is left behind (and a move keeps its source).
+                        target.deleteRecursively()
+                        throw e
+                    }
                     if (move) src.deleteRecursively()
                 }
                 scanTargets += filesUnder(target)
@@ -292,7 +301,7 @@ class FileRepository(private val context: Context) {
      * Returns local paths to rescan. Android/data can't take part: it's only reachable through
      * a different connection.
      */
-    private suspend fun transferRemote(path: String, destDir: String, move: Boolean): List<String> {
+    private suspend fun transferRemote(path: String, destDir: String, move: Boolean, progress: CopyProgress?): List<String> {
         if (isRestricted(path) || isRestricted(destDir)) {
             throw IOException("Copy between Android/data and a server or device isn't supported — copy via another folder")
         }
@@ -308,7 +317,7 @@ class FileRepository(private val context: Context) {
                 // Between two machines: through a temporary local copy.
                 val temp = File(context.cacheDir, "transfer/${System.nanoTime()}").apply { mkdirs() }
                 try {
-                    remoteUpload(remoteDownload(path, temp), destDir)
+                    remoteUpload(remoteDownload(path, temp, progress), destDir, progress)
                 } finally {
                     temp.deleteRecursively()
                 }
@@ -316,13 +325,13 @@ class FileRepository(private val context: Context) {
                 emptyList()
             }
             isRemote(path) -> {
-                val local = remoteDownload(path, File(destDir))
+                val local = remoteDownload(path, File(destDir), progress)
                 if (move) remoteDelete(listOf(path))
                 filesUnder(local)
             }
             else -> {
                 val src = File(path)
-                remoteUpload(src, destDir)
+                remoteUpload(src, destDir, progress)
                 if (move) {
                     val removed = filesUnder(src)
                     src.deleteRecursively()
@@ -342,11 +351,11 @@ class FileRepository(private val context: Context) {
         SshPath.parse(path)?.let { SshPath(it.hostId, it.parent).toString() }
             ?: AdbPath.parse(path)?.let { AdbPath(it.deviceId, it.parent).toString() }
 
-    private suspend fun remoteDownload(path: String, localDir: File): File =
-        if (isSsh(path)) sshFiles().download(path, localDir) else adbFiles().download(path, localDir)
+    private suspend fun remoteDownload(path: String, localDir: File, progress: CopyProgress? = null): File =
+        if (isSsh(path)) sshFiles().download(path, localDir, progress) else adbFiles().download(path, localDir, progress)
 
-    private suspend fun remoteUpload(local: File, destDir: String): String =
-        if (isSsh(destDir)) sshFiles().upload(local, destDir) else adbFiles().upload(local, destDir)
+    private suspend fun remoteUpload(local: File, destDir: String, progress: CopyProgress? = null): String =
+        if (isSsh(destDir)) sshFiles().upload(local, destDir, progress) else adbFiles().upload(local, destDir, progress)
 
     private suspend fun remoteDelete(paths: Collection<String>) {
         val (onServers, onDevices) = paths.partition(::isSsh)

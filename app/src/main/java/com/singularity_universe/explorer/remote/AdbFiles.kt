@@ -1,5 +1,7 @@
 package com.singularity_universe.explorer.remote
 
+import com.singularity_universe.explorer.data.CopyCancelledException
+import com.singularity_universe.explorer.data.CopyProgress
 import com.singularity_universe.explorer.data.FileItem
 import java.io.File
 import java.io.IOException
@@ -67,12 +69,12 @@ class AdbFiles(val devices: AdbDevices) {
     }
 
     /** Downloads a file or folder into [localDir], picking a free name. Returns the local copy. */
-    suspend fun download(source: String, localDir: File): File {
+    suspend fun download(source: String, localDir: File, progress: CopyProgress? = null): File {
         val from = parse(source)
         var target = File(localDir, from.name)
         var i = 1
         while (target.exists()) target = File(localDir, numbered(from.name, i++))
-        downloadRecursively(from, target)
+        downloadRecursively(from, target, progress)
         return target
     }
 
@@ -95,29 +97,39 @@ class AdbFiles(val devices: AdbDevices) {
     }
 
     /** Uploads a local file or folder into [destDir] on the device. Returns the remote path. */
-    suspend fun upload(local: File, destDir: String): String {
+    suspend fun upload(local: File, destDir: String, progress: CopyProgress? = null): String {
         val target = uniqueTarget(parse(destDir), local.name)
-        uploadRecursively(local, target)
+        uploadRecursively(local, target, progress)
         return target.toString()
     }
 
-    private suspend fun downloadRecursively(from: AdbPath, target: File) {
+    private suspend fun downloadRecursively(from: AdbPath, target: File, progress: CopyProgress?) {
         if (isDirectory(from)) {
             target.mkdirs()
             list(from.toString(), showHidden = true).forEach { child ->
-                downloadRecursively(parse(child.path), File(target, child.name))
+                downloadRecursively(parse(child.path), File(target, child.name), progress)
             }
         } else {
-            devices.pull(from.deviceId, from.path, target)
+            try {
+                devices.pull(from.deviceId, from.path, target, progress)
+            } catch (e: CopyCancelledException) {
+                target.delete()
+                throw e
+            }
         }
     }
 
-    private suspend fun uploadRecursively(local: File, target: AdbPath) {
+    private suspend fun uploadRecursively(local: File, target: AdbPath, progress: CopyProgress?) {
         if (local.isDirectory) {
             run(target.deviceId, "mkdir -p -- ${shellQuote(target.path)}", "Couldn't create ${local.name}")
-            local.listFiles().orEmpty().forEach { uploadRecursively(it, target.child(it.name)) }
+            local.listFiles().orEmpty().forEach { uploadRecursively(it, target.child(it.name), progress) }
         } else {
-            devices.push(target.deviceId, local, target.path)
+            try {
+                devices.push(target.deviceId, local, target.path, progress)
+            } catch (e: CopyCancelledException) {
+                runCatching { devices.exec(target.deviceId, "rm -f -- ${shellQuote(target.path)}") }
+                throw e
+            }
         }
     }
 
