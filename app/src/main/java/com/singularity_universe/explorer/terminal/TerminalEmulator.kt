@@ -131,6 +131,98 @@ class TerminalEmulator(columns: Int, rows: Int, private val reply: (ByteArray) -
         return out.trimEnd().toString()
     }
 
+    // ---- Selecting and links ----
+    //
+    // Positions here count lines through the whole buffer: 0 is the oldest scrollback line, and
+    // the screen's rows follow it, so they stay put while the view scrolls.
+
+    /** Lines in the buffer: scrollback plus the screen. */
+    val totalLines: Int get() = historySize + rows
+
+    /** Line [index] of the whole buffer (0 = oldest scrollback line). */
+    fun bufferLine(index: Int): Line = lineAt(index - historySize)
+
+    /**
+     * The text from ([startLine], [startColumn]) to ([endLine], [endColumn]), inclusive, in either
+     * order. Lines that were wrapped are joined without a line break; trailing blanks are dropped.
+     */
+    fun textBetween(startLine: Int, startColumn: Int, endLine: Int, endColumn: Int): String {
+        val (fromLine, fromColumn, toLine, toColumn) =
+            if (startLine < endLine || (startLine == endLine && startColumn <= endColumn)) listOf(startLine, startColumn, endLine, endColumn)
+            else listOf(endLine, endColumn, startLine, startColumn)
+        val out = StringBuilder()
+        for (index in fromLine.coerceAtLeast(0)..toLine.coerceAtMost(totalLines - 1)) {
+            val line = bufferLine(index)
+            val first = if (index == fromLine) fromColumn else 0
+            val last = if (index == toLine) toColumn else line.size - 1
+            val part = StringBuilder()
+            for (x in first.coerceAtLeast(0)..last.coerceAtMost(line.size - 1)) {
+                val cp = line.text[x]
+                if (cp == WIDE_TAIL) continue
+                part.appendCodePoint(if (cp == 0) ' '.code else cp)
+            }
+            out.append(if (line.wrapped && index != toLine) part else part.trimEnd())
+            if (index != toLine && !line.wrapped) out.append('\n')
+        }
+        return out.toString()
+    }
+
+    /** The columns of the word (a run of non-blank characters) at [column] of buffer line [index]. */
+    fun wordAt(index: Int, column: Int): IntRange {
+        val line = bufferLine(index)
+        fun blank(x: Int) = line.text[x].let { it == 0 || it == ' '.code }
+        val x = column.coerceIn(0, line.size - 1)
+        if (blank(x)) return x..x
+        var start = x
+        while (start > 0 && !blank(start - 1)) start--
+        var end = x
+        while (end < line.size - 1 && !blank(end + 1)) end++
+        return start..end
+    }
+
+    /** A web address under [column] of buffer line [index] (following it onto wrapped lines), or null. */
+    fun urlAt(index: Int, column: Int): String? {
+        // The logical line: this line, plus the lines it wraps onto.
+        var first = index
+        while (first > 0 && bufferLine(first - 1).wrapped) first--
+        var last = index
+        while (last < totalLines - 1 && bufferLine(last).wrapped) last++
+        val widths = (first..last).map { bufferLine(it).size }
+        val text = (first..last).joinToString("") { lineText(bufferLine(it)) }
+        val offset = widths.take(index - first).sum() + column
+        for (match in URL.findAll(text)) {
+            val url = trimUrl(match.value)
+            if (offset >= match.range.first && offset < match.range.first + url.length) return url
+        }
+        return null
+    }
+
+    /** A line's cells as text, one character per cell (blank for empty and wide-tail cells). */
+    private fun lineText(line: Line): String {
+        val sb = StringBuilder(line.size)
+        for (x in 0 until line.size) {
+            val cp = line.text[x]
+            // Keep one char per cell so offsets match columns (wide characters become a placeholder).
+            sb.append(if (cp == 0 || cp == WIDE_TAIL || cp > 0xFFFF) ' ' else cp.toChar())
+        }
+        return sb.toString()
+    }
+
+    /** Drops punctuation that ends a sentence rather than the address, keeping balanced brackets. */
+    private fun trimUrl(url: String): String {
+        var end = url.length
+        while (end > 0) {
+            val c = url[end - 1]
+            val unbalanced = when (c) {
+                ')' -> url.substring(0, end).count { it == '(' } < url.substring(0, end).count { it == ')' }
+                ']' -> url.substring(0, end).count { it == '[' } < url.substring(0, end).count { it == ']' }
+                else -> false
+            }
+            if (c in ".,;:!?'\"" || unbalanced) end-- else break
+        }
+        return url.substring(0, end)
+    }
+
     // ---- Input from the server ----
 
     private enum class State { Ground, Escape, EscapeIntermediate, Csi, Osc, OscEscape, IgnoreString, IgnoreStringEscape }
@@ -914,6 +1006,8 @@ class TerminalEmulator(columns: Int, rows: Int, private val reply: (ByteArray) -
         private const val ESC = 0x1B
         private const val CAN = 0x18
         private const val SUB = 0x1A
+
+        private val URL = Regex("(?:https?|ftp)://[^\\s<>\"'`]+|www\\.[^\\s<>\"'`]+")
 
         /** DEC Special Graphics for '_'..'~': the box-drawing set used by `ESC ( 0`. */
         private const val DEC_GRAPHICS = " ◆▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£·"

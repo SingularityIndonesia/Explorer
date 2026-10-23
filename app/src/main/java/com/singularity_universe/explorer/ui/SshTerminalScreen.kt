@@ -1,72 +1,71 @@
 package com.singularity_universe.explorer.ui
 
+import android.content.res.Configuration
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.SwapHoriz
-import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import com.singularity_universe.explorer.terminal.ExtraKey
-import com.singularity_universe.explorer.terminal.ExtraKeysSettings
-import com.singularity_universe.explorer.terminal.KeysPosition
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BatteryAlert
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -80,8 +79,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -90,7 +91,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.singularity_universe.explorer.remote.SshTerminal
+import com.singularity_universe.explorer.terminal.ExtraKey
+import com.singularity_universe.explorer.terminal.ExtraKeysSettings
+import com.singularity_universe.explorer.terminal.KeysPosition
 import com.singularity_universe.explorer.terminal.StickyModifiers
 import com.singularity_universe.explorer.terminal.TerminalColors
 import com.singularity_universe.explorer.terminal.TerminalView
@@ -111,7 +117,13 @@ private val KEY_CELL = 64.dp
 @Composable
 fun SshTerminalScreen(
     name: String,
+    /** The session on screen, and all of the window's sessions (tabs). */
     terminal: SshTerminal,
+    sessions: List<SshTerminal>,
+    current: Int,
+    onSelectSession: (Int) -> Unit,
+    onNewSession: () -> Unit,
+    onCloseSession: (Int) -> Unit,
     fontSize: Float,
     onFontSizeChanged: (Float) -> Unit,
     onBack: () -> Unit,
@@ -132,11 +144,19 @@ fun SshTerminalScreen(
     // The view is recreated when the keys move (side panel ↔ row): it keeps the current text size.
     var currentFontSize by remember { mutableFloatStateOf(fontSize) }
     val status = terminal.status
+    val keysSettings = remember { ExtraKeysSettings(context) }
+    var keysDialog by remember { mutableStateOf(false) }
+    // A hardware keyboard has Esc, Ctrl and arrows: the extra keys step aside (unless turned off).
+    val configuration = LocalConfiguration.current
+    val hardwareKeyboard = configuration.keyboard != Configuration.KEYBOARD_NOKEYS &&
+        configuration.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
+    val showKeys = !(hardwareKeyboard && keysSettings.hideWithKeyboard)
     BackHandler(onBack = onBack)
 
     Scaffold(
         containerColor = TerminalBackground,
         topBar = {
+            Column {
             TopAppBar(
                 title = {
                     Column {
@@ -180,7 +200,9 @@ fun SshTerminalScreen(
                             }
                             clipboard.setText(AnnotatedString(text))
                         }
+                        item("New session", Icons.Outlined.Add) { onNewSession() }
                         item("Reconnect", Icons.Outlined.Refresh) { terminal.reconnect() }
+                        item("Extra keys…", Icons.Outlined.Tune) { keysDialog = true }
                         if (onKeepConnected != null) {
                             item("Stay connected in background", Icons.Outlined.BatteryAlert) { onKeepConnected() }
                         }
@@ -193,6 +215,8 @@ fun SshTerminalScreen(
                     actionIconContentColor = BarText,
                 ),
             )
+            if (sessions.size > 1) SessionTabs(sessions, current, onSelectSession, onCloseSession)
+            }
         },
     ) { padding ->
         Column(
@@ -202,8 +226,6 @@ fun SshTerminalScreen(
                 .consumeWindowInsets(padding)
                 .imePadding(),
         ) {
-            val keysSettings = remember { ExtraKeysSettings(context) }
-            var keysDialog by remember { mutableStateOf(false) }
             val press: (ExtraKey) -> Unit = { key ->
                 when (key) {
                     is ExtraKey.Special -> view?.sendKey(key.keyCode)
@@ -229,17 +251,22 @@ fun SshTerminalScreen(
                             post { showKeyboard() }
                         }
                     },
+                    // Switching tabs shows another session in the same view.
+                    update = { it.terminal = terminal },
                     modifier = Modifier.fillMaxSize(),
                 )
                 StatusOverlay(status, onReconnect = terminal::reconnect, onClose = onClose)
             }
             }
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                val side = when (keysSettings.position) {
+                val side = when {
+                    !showKeys -> false
+                    else -> when (keysSettings.position) {
                     KeysPosition.Side -> true
                     KeysPosition.Bottom -> false
                     // Tablets: a panel beside the terminal, easier to reach than a long row.
                     KeysPosition.Auto -> maxWidth >= 600.dp
+                    }
                 }
                 if (side) {
                     Row(Modifier.fillMaxSize()) {
@@ -266,8 +293,10 @@ fun SshTerminalScreen(
                 } else {
                     Column(Modifier.fillMaxSize()) {
                         terminalArea(Modifier.weight(1f).fillMaxWidth())
-                        HorizontalDivider(color = Divider)
-                        KeysRow(keysSettings.keys, modifiers, keysSettings.leftHanded, press) { keysDialog = true }
+                        if (showKeys) {
+                            HorizontalDivider(color = Divider)
+                            KeysRow(keysSettings.keys, modifiers, keysSettings.leftHanded, press) { keysDialog = true }
+                        }
                     }
                 }
             }
@@ -484,6 +513,11 @@ private fun KeysSettingsDialog(settings: ExtraKeysSettings, onDismiss: () -> Uni
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Hide when a keyboard is connected", modifier = Modifier.weight(1f))
+                        Switch(checked = settings.hideWithKeyboard, onCheckedChange = settings::updateHideWithKeyboard)
+                    }
+
                     SettingsTitle("Side panel columns")
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         (2..5).forEachIndexed { index, n ->
@@ -575,5 +609,40 @@ private fun SettingsTitle(text: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 12.dp),
     )
+}
+
+/** One tab per session: its number and what the shell is doing, with a close button. */
+@Composable
+private fun SessionTabs(sessions: List<SshTerminal>, current: Int, onSelect: (Int) -> Unit, onClose: (Int) -> Unit) {
+    PrimaryScrollableTabRow(
+        selectedTabIndex = current.coerceIn(0, sessions.lastIndex),
+        containerColor = TerminalBackground,
+        contentColor = BarText,
+        edgePadding = 8.dp,
+    ) {
+        sessions.forEachIndexed { index, session ->
+            Tab(
+                selected = index == current,
+                onClick = { onSelect(index) },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val label = when (val status = session.status) {
+                            SshTerminal.Status.Connected -> session.title ?: "Session ${index + 1}"
+                            SshTerminal.Status.Connecting -> "Connecting…"
+                            is SshTerminal.Status.Ended -> status.message
+                            is SshTerminal.Status.Failed -> "Not connected"
+                        }
+                        Text("${index + 1} · $label", maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp))
+                        Icon(
+                            Icons.Filled.Close,
+                            "Close session ${index + 1}",
+                            Modifier.padding(start = 6.dp).size(16.dp).clickable { onClose(index) },
+                            tint = BarTextDim,
+                        )
+                    }
+                },
+            )
+        }
+    }
 }
 

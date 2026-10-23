@@ -23,6 +23,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -35,6 +37,7 @@ import com.singularity_universe.explorer.remote.SshTerminal
 import com.singularity_universe.explorer.remote.TerminalSessions
 import com.singularity_universe.explorer.ui.SshTerminalScreen
 import com.singularity_universe.explorer.ui.theme.ExplorerTheme
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -111,13 +114,19 @@ class SSHTerminalActivity : ComponentActivity() {
                 SshTerminalScreen(
                     name = name,
                     terminal = vm.terminal,
+                    sessions = vm.sessions,
+                    current = vm.current,
+                    onSelectSession = vm::select,
+                    onNewSession = { vm.newSession() },
+                    onCloseSession = { index -> if (vm.closeSession(index)) finishAndRemoveTask() },
                     fontSize = prefs.getFloat(KEY_FONT_SIZE, DEFAULT_FONT_SIZE),
                     onFontSizeChanged = { prefs.edit().putFloat(KEY_FONT_SIZE, it).apply() },
                     onBack = {
                         // A live session stays open in the background; an ended one just closes.
-                        if (vm.terminal.status == SshTerminal.Status.Connected) moveTaskToBack(true) else finish()
+                        if (vm.anyConnected) moveTaskToBack(true) else finish()
                     },
-                    onClose = ::finishAndRemoveTask,
+                    // The close button ends the session on screen; the window goes with the last one.
+                    onClose = { if (vm.closeSession(vm.current)) finishAndRemoveTask() },
                     onKeepConnected = if (batteryExempt) null else ::requestBatteryExemption,
                     addresses = ssh.host(id)?.let { host -> host.hosts.indices.map(host::addressOf) }.orEmpty(),
                     activeAddress = ssh.host(id)?.activeHost ?: 0,
@@ -182,26 +191,66 @@ class SSHTerminalActivity : ComponentActivity() {
 }
 
 /** Holds the terminal session for the activity's whole life; it survives rotation and ends with the activity. */
-class TerminalViewModel(app: Application, hostId: String, directory: String?) : AndroidViewModel(app) {
+/**
+ * Holds the window's terminal sessions (tabs) for the activity's whole life; they survive rotation
+ * and end with the activity, or when their tab is closed.
+ */
+class TerminalViewModel(app: Application, private val hostId: String, directory: String?) : AndroidViewModel(app) {
     private val ssh = SshConnections.get(app)
     private val name = ssh.host(hostId)?.name ?: "Server"
-    val terminal = SshTerminal(ssh, hostId).apply {
-        startDirectory = directory
-        connect()
-    }
+    private val watchers = HashMap<SshTerminal, Job>()
+
+    val sessions = mutableStateListOf<SshTerminal>()
+    var current by mutableIntStateOf(0)
+        private set
+
+    /** The session on screen. */
+    val terminal: SshTerminal get() = sessions[current.coerceIn(0, sessions.lastIndex)]
 
     init {
-        // The background service runs while this session is connecting or connected.
-        viewModelScope.launch {
-            snapshotFlow { terminal.status }.collect { status ->
+        newSession(directory)
+    }
+
+    /** Opens another session to the same server, on its own connection, and shows it. */
+    fun newSession(directory: String? = null) {
+        val session = SshTerminal(ssh, hostId).apply {
+            startDirectory = directory
+            connect()
+        }
+        sessions += session
+        current = sessions.lastIndex
+        // The background service runs while any session is connecting or connected.
+        watchers[session] = viewModelScope.launch {
+            snapshotFlow { session.status }.collect { status ->
                 val active = status == SshTerminal.Status.Connecting || status == SshTerminal.Status.Connected
-                TerminalSessions.update(getApplication(), terminal, name, active)
+                TerminalSessions.update(getApplication(), session, name, active)
             }
         }
     }
 
+    fun select(index: Int) {
+        if (index in sessions.indices) current = index
+    }
+
+    /** Ends a session. Returns true when it was the last one. */
+    fun closeSession(index: Int): Boolean {
+        val session = sessions.getOrNull(index) ?: return sessions.isEmpty()
+        end(session)
+        sessions.removeAt(index)
+        if (current >= sessions.size) current = (sessions.size - 1).coerceAtLeast(0)
+        return sessions.isEmpty()
+    }
+
+    /** Some session is connected (so leaving should keep the window in the background). */
+    val anyConnected: Boolean get() = sessions.any { it.status == SshTerminal.Status.Connected }
+
+    private fun end(session: SshTerminal) {
+        watchers.remove(session)?.cancel()
+        TerminalSessions.update(getApplication(), session, name, active = false)
+        session.close()
+    }
+
     override fun onCleared() {
-        TerminalSessions.update(getApplication(), terminal, name, active = false)
-        terminal.close()
+        sessions.forEach(::end)
     }
 }

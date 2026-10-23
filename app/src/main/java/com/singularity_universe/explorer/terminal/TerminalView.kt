@@ -1,16 +1,26 @@
 package com.singularity_universe.explorer.terminal
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Typeface
+import android.net.Uri
 import android.text.InputType
 import android.util.TypedValue
+import android.view.ActionMode
 import android.view.GestureDetector
+import android.view.HapticFeedbackConstants
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
+import android.view.Menu
+import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -18,6 +28,7 @@ import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
+import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -41,6 +52,8 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
 
     var terminal: SshTerminal? = null
         set(value) {
+            if (value === field) return
+            clearSelection()
             field?.onScreenChanged = null
             field = value
             value?.onScreenChanged = { postInvalidateOnAnimation() }
@@ -78,6 +91,12 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
 
     /** How many lines back into the scrollback the view shows (0 = following the output). */
     private var scrollback = 0
+
+    /** Selected text, in buffer positions: start line, start column, end line, end column. */
+    private var selection: IntArray? = null
+    private var selecting = false
+    private var actionMode: ActionMode? = null
+    private val selectionPaint = Paint().apply { color = 0x664FC3F7 }
     private var scrollRemainder = 0f
 
     init {
@@ -128,8 +147,25 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
                 ) emulator.cursorX else -1
                 drawLine(canvas, line, row, min(line.size, emulator.columns), cursorColumn, reverse)
             }
+            selection?.let { drawSelection(canvas, emulator, it) }
         }
     }
+
+    private fun drawSelection(canvas: Canvas, emulator: TerminalEmulator, sel: IntArray) {
+        val (startLine, startColumn, endLine, endColumn) = ordered(sel)
+        for (row in 0 until emulator.rows) {
+            val line = emulator.historySize - scrollback + row
+            if (line < startLine || line > endLine) continue
+            val from = if (line == startLine) startColumn else 0
+            val to = if (line == endLine) endColumn else emulator.columns - 1
+            val top = padding + row * cellHeight.toFloat()
+            canvas.drawRect(padding + from * cellWidth, top, padding + (to + 1) * cellWidth, top + cellHeight, selectionPaint)
+        }
+    }
+
+    /** The selection with its start before its end. */
+    private fun ordered(sel: IntArray): IntArray =
+        if (sel[0] < sel[2] || (sel[0] == sel[2] && sel[1] <= sel[3])) sel else intArrayOf(sel[2], sel[3], sel[0], sel[1])
 
     private val run = StringBuilder()
 
@@ -219,7 +255,18 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
 
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             val terminal = terminal ?: return false
+            if (selection != null) {
+                clearSelection()
+                return true
+            }
             val (mouse, sgr) = synchronized(terminal.emulator) { terminal.emulator.mouseTracking to terminal.emulator.sgrMouse }
+            // A tapped web address opens in the browser.
+            val (tapColumn, tapRow) = cellAt(e)
+            val url = synchronized(terminal.emulator) { terminal.emulator.urlAt(terminal.emulator.historySize - scrollback + tapRow, tapColumn) }
+            if (url != null) {
+                openUrl(url)
+                return true
+            }
             if (mouse != 0) {
                 val (column, row) = cellAt(e)
                 TerminalKeys.mouse(0, column, row, press = true, sgr = sgr)?.let(terminal::send)
@@ -228,6 +275,22 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
                 showKeyboard()
             }
             return true
+        }
+
+        /** Long-press selects the word under the finger; dragging on extends the selection. */
+        override fun onLongPress(e: MotionEvent) {
+            val terminal = terminal ?: return
+            val emulator = terminal.emulator
+            val (column, row) = cellAt(e)
+            synchronized(emulator) {
+                val line = emulator.historySize - scrollback + row
+                val word = emulator.wordAt(line, column)
+                selection = intArrayOf(line, word.first, line, word.last)
+            }
+            selecting = true
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            startSelectionMode()
+            invalidate()
         }
 
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
@@ -261,6 +324,28 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        // Dragging after a long-press moves the end of the selection.
+        if (selecting) {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_MOVE -> {
+                    val emulator = terminal?.emulator ?: return true
+                    val (column, row) = cellAt(event)
+                    synchronized(emulator) {
+                        selection?.let {
+                            it[2] = emulator.historySize - scrollback + row
+                            it[3] = column
+                        }
+                    }
+                    invalidate()
+                    actionMode?.invalidateContentRect()
+                    return true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    selecting = false
+                    actionMode?.invalidateContentRect()
+                }
+            }
+        }
         scaler.onTouchEvent(event)
         if (event.actionMasked == MotionEvent.ACTION_DOWN) scaling = false
         gestures.onTouchEvent(event)
@@ -300,6 +385,88 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
         val column = ((event.x - padding) / cellWidth).toInt().coerceIn(0, emulator.columns - 1)
         val row = ((event.y - padding) / cellHeight).toInt().coerceIn(0, emulator.rows - 1)
         return column to row
+    }
+
+    private fun startSelectionMode() {
+        if (actionMode != null) {
+            actionMode?.invalidateContentRect()
+            return
+        }
+        actionMode = startActionMode(object : ActionMode.Callback2() {
+            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+                menu.add(0, MENU_COPY, 0, android.R.string.copy)
+                menu.add(0, MENU_SELECT_ALL, 1, android.R.string.selectAll)
+                menu.add(0, MENU_PASTE, 2, android.R.string.paste)
+                return true
+            }
+
+            override fun onPrepareActionMode(mode: ActionMode, menu: Menu) = false
+
+            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+                when (item.itemId) {
+                    MENU_COPY -> {
+                        copySelection()
+                        mode.finish()
+                    }
+                    MENU_SELECT_ALL -> {
+                        terminal?.emulator?.let { emulator ->
+                            synchronized(emulator) { selection = intArrayOf(0, 0, emulator.totalLines - 1, emulator.columns - 1) }
+                        }
+                        invalidate()
+                        mode.invalidateContentRect()
+                    }
+                    MENU_PASTE -> {
+                        context.getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)
+                            ?.coerceToText(context)?.toString()?.let(::paste)
+                        mode.finish()
+                    }
+                }
+                return true
+            }
+
+            override fun onDestroyActionMode(mode: ActionMode) {
+                actionMode = null
+                selection = null
+                selecting = false
+                invalidate()
+            }
+
+            override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
+                val emulator = terminal?.emulator
+                val sel = selection
+                if (emulator == null || sel == null) {
+                    outRect.set(0, 0, width, height / 2)
+                    return
+                }
+                val (startLine, _, endLine, _) = ordered(sel)
+                val firstRow = (startLine - (emulator.historySize - scrollback)).coerceIn(0, emulator.rows - 1)
+                val lastRow = (endLine - (emulator.historySize - scrollback)).coerceIn(0, emulator.rows - 1)
+                outRect.set(0, padding + firstRow * cellHeight, width, padding + (lastRow + 1) * cellHeight)
+            }
+        }, ActionMode.TYPE_FLOATING)
+    }
+
+    private fun copySelection() {
+        val emulator = terminal?.emulator ?: return
+        val sel = selection ?: return
+        val text = synchronized(emulator) { emulator.textBetween(sel[0], sel[1], sel[2], sel[3]) }
+        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Terminal", text))
+    }
+
+    private fun clearSelection() {
+        actionMode?.finish() ?: run {
+            selection = null
+            invalidate()
+        }
+    }
+
+    private fun openUrl(url: String) {
+        val uri = Uri.parse(if (url.startsWith("www.")) "https://$url" else url)
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(context, "No app can open this link", Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun showKeyboard() {
@@ -485,6 +652,9 @@ class TerminalView(context: Context, private val modifiers: StickyModifiers) : V
     }
 
     companion object {
+        private const val MENU_COPY = 1
+        private const val MENU_SELECT_ALL = 2
+        private const val MENU_PASTE = 3
         const val MIN_FONT_SP = 7f
         const val MAX_FONT_SP = 32f
 

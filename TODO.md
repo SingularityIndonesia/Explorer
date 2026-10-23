@@ -6,6 +6,7 @@ Nothing queued; see the sections below.
 
 ## Done
 
+- [x] Terminal: select and copy text, tap links, several sessions (tabs) per server, extra keys hide with a hardware keyboard.
 - [x] Free up space: large files, duplicates (size → quick hash → SHA-256), old downloads, installer files; deleting goes to Trash.
 - [x] Audio player: background playback (Media3 session: notification, lock screen, headphones), folder queue, mini player and Now playing sheet.
 - [x] Background transfers: copy/move queue in a foreground service with progress, Cancel and a summary notification.
@@ -35,10 +36,8 @@ Nothing queued; see the sections below.
 
 ## Terminal
 
-- Select and copy text (only the whole screen can be copied now).
-- More than one session per server (tabs), instead of one window per server.
-- Tap links (URLs) in the output to open them.
-- Hide the extra keys automatically when a hardware keyboard is connected.
+- Drag to the top or bottom edge while selecting to scroll further back.
+- Highlight links in the output (they open on tap but aren't underlined).
 
 ## Editors and previews
 

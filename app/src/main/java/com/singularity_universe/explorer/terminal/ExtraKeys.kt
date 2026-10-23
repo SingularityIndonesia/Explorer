@@ -101,6 +101,15 @@ class ExtraKeysSettings(context: Context) {
     )
         private set
 
+    /** Hide the keys while a hardware keyboard is connected (it has Esc, Ctrl, arrows...). */
+    var hideWithKeyboard by mutableStateOf(prefs.getBoolean(KEY_HIDE_WITH_KEYBOARD, true))
+        private set
+
+    fun updateHideWithKeyboard(value: Boolean) {
+        hideWithKeyboard = value
+        prefs.edit().putBoolean(KEY_HIDE_WITH_KEYBOARD, value).apply()
+    }
+
     /** Keys on the left: the side panel on the left, and the row starting from the left edge. */
     var leftHanded by mutableStateOf(prefs.getBoolean(KEY_LEFT_HANDED, false))
         private set
@@ -133,6 +142,7 @@ class ExtraKeysSettings(context: Context) {
         updatePosition(KeysPosition.Auto)
         updateLeftHanded(false)
         updateColumns(DEFAULT_COLUMNS)
+        updateHideWithKeyboard(true)
     }
 
     private fun load(): List<ExtraKey> {
@@ -156,6 +166,7 @@ class ExtraKeysSettings(context: Context) {
         const val KEY_POSITION = "terminal_extra_keys_position"
         const val KEY_LEFT_HANDED = "terminal_extra_keys_left_handed"
         const val KEY_COLUMNS = "terminal_extra_keys_columns"
+        const val KEY_HIDE_WITH_KEYBOARD = "terminal_extra_keys_hide_with_keyboard"
         const val DEFAULT_COLUMNS = 3
         const val KEY_ADDED_CTRL_V = "terminal_extra_keys_added_ctrl_v"
     }

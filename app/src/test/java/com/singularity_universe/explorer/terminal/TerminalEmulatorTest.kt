@@ -50,6 +50,35 @@ class TerminalEmulatorTest {
         assertEquals("é✓", emulator.textOf(0))
     }
 
+    @Test
+    fun urlsUnderTheFinger() {
+        val emulator = TerminalEmulator(40, 5) {}
+        emulator.append("see https://example.com/a_(b). ok\r\n".toByteArray())
+        assertEquals("https://example.com/a_(b)", emulator.urlAt(0, 10))
+        assertEquals("the closing bracket belongs to the link", "https://example.com/a_(b)", emulator.urlAt(0, 28))
+        assertEquals("the full stop after it doesn't", null, emulator.urlAt(0, 29))
+        assertEquals(null, emulator.urlAt(0, 1))
+        // 41 characters in 40 columns: the address wraps, and both parts are the same link.
+        emulator.append("go https://example.org/a/very/long/path/x".toByteArray())
+        assertEquals("https://example.org/a/very/long/path/x", emulator.urlAt(1, 3))
+        assertEquals("https://example.org/a/very/long/path/x", emulator.urlAt(2, 0))
+    }
+
+    @Test
+    fun wordsAndCopiedText() {
+        val emulator = TerminalEmulator(10, 3) {}
+        // "0123456789abc" wraps after 10 columns; the 3-row screen scrolls "one two" into scrollback.
+        emulator.append("one two\r\n0123456789abc\r\nlast".toByteArray())
+        assertEquals(1, emulator.historySize)
+        assertEquals(4..6, emulator.wordAt(0, 5))
+        assertEquals("a wrapped line copies as one line", "0123456789abc", emulator.textBetween(1, 0, 2, 2))
+        assertEquals("two\n0123456789abc\nlast", emulator.textBetween(3, 3, 0, 4))
+        // More scrolling doesn't move buffer positions.
+        emulator.append("\r\nmore".toByteArray())
+        assertEquals(2, emulator.historySize)
+        assertEquals("one two", emulator.textBetween(0, 0, 0, 9))
+    }
+
     private fun replay(name: String) {
         val recording = File(fixtures, "$name.bin")
         assumeTrue("No recording at $recording", recording.exists())
