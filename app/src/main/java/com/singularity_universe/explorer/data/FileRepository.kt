@@ -430,14 +430,14 @@ class FileRepository(private val context: Context) {
     val downloadsDir: File get() = File(rootDir, Environment.DIRECTORY_DOWNLOADS)
 
     /**
-     * Extracts [only] (or everything) from the local zip [archive] into a new folder in [destDir],
+     * Extracts [only] (or everything) from the local [archive] into a new folder in [destDir],
      * named after [archiveName]. Paths inside are taken relative to [base]. Returns the folder.
      */
-    suspend fun extractZip(archive: File, archiveName: String, destDir: String, only: Collection<String>?, base: String): File =
+    suspend fun extractArchive(archive: File, archiveName: String, destDir: String, only: Collection<String>?, base: String, password: String?): File =
         withContext(Dispatchers.IO) {
-            val folder = uniqueTarget(File(destDir), archiveName.substringBeforeLast('.').ifEmpty { archiveName })
+            val folder = uniqueTarget(File(destDir), Archives.baseName(archiveName))
             val written = try {
-                ZipArchives.extract(archive, folder, only, base)
+                Archives.extract(archive, folder, only, base, password)
             } catch (e: Exception) {
                 folder.deleteRecursively()
                 throw e
@@ -450,7 +450,7 @@ class FileRepository(private val context: Context) {
     suspend fun compress(paths: List<String>, destDir: String, name: String): File = withContext(Dispatchers.IO) {
         val target = uniqueTarget(File(destDir), if (name.endsWith(".zip", ignoreCase = true)) name else "$name.zip")
         try {
-            ZipArchives.compress(paths.map(::File), target)
+            Archives.compress(paths.map(::File), target)
         } catch (e: Exception) {
             target.delete()
             throw e

@@ -12,6 +12,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.singularity_universe.explorer.audio.AudioPlayback
+import com.singularity_universe.explorer.data.Archives
 import com.singularity_universe.explorer.data.Category
 import com.singularity_universe.explorer.data.FileKind
 import com.singularity_universe.explorer.data.FileItem
@@ -20,7 +21,7 @@ import com.singularity_universe.explorer.data.SortOrder
 import com.singularity_universe.explorer.data.Transfers
 import com.singularity_universe.explorer.data.isPreviewable
 import com.singularity_universe.explorer.data.isText
-import com.singularity_universe.explorer.data.isZip
+import com.singularity_universe.explorer.data.isArchive
 import com.singularity_universe.explorer.data.looksLikeText
 import com.singularity_universe.explorer.data.resolveFilePath
 import com.singularity_universe.explorer.data.toFileItem
@@ -155,7 +156,7 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             documentKindOf(item.name) != null -> navigate(Route.DocumentPreview(item))
-            item.isZip -> navigate(Route.Archive(item))
+            item.isArchive -> navigate(Route.Archive(item))
             item.isText -> navigate(Route.TextPreview(item))
             // Unknown type: look at the start of the file (remote ones only when small enough to fetch first).
             item.mimeType == "application/octet-stream" && (!remote || item.size <= SNIFF_REMOTE_MAX) -> viewModelScope.launch {
@@ -181,11 +182,21 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
      * Extracts entries of a zip (the downloaded [local] copy of [archive]) into a new folder: next to
      * the zip on this phone, or in Downloads for a zip on a server or another device.
      */
-    fun extractZip(archive: FileItem, local: File, only: Collection<String>?, base: String) {
+    fun extractArchive(archive: FileItem, local: File, only: Collection<String>?, base: String, password: String?, onPasswordNeeded: (wrong: Boolean) -> Unit) {
         val dest = if (repo.needsCopyToOpen(archive.path)) repo.downloadsDir.path else parentOf(archive.path)
-        runOperation(null) {
-            val folder = repo.extractZip(local, archive.name, dest, only, base)
-            message("Extracted to ${displayName(folder.parent ?: dest)}/${folder.name}")
+        viewModelScope.launch {
+            busy = true
+            try {
+                val folder = repo.extractArchive(local, archive.name, dest, only, base, password)
+                message("Extracted to ${displayName(folder.parent ?: dest)}/${folder.name}")
+            } catch (e: Archives.PasswordRequiredException) {
+                onPasswordNeeded(e.wrong)
+            } catch (e: Exception) {
+                message(e.message ?: "Couldn't extract")
+            } finally {
+                busy = false
+                invalidateAll()
+            }
         }
     }
 

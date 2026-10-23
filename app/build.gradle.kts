@@ -92,6 +92,10 @@ dependencies {
     implementation(libs.conscrypt.android)
     implementation(libs.bouncycastle.pkix)
     implementation(libs.jsch)
+    // Archives: tar/gz/bz2/xz/7z, and password-protected zips.
+    implementation(libs.commons.compress)
+    implementation(libs.xz)
+    implementation(libs.zip4j)
     testImplementation(libs.junit)
     // The XML parser Android has built in, for the document reader tests.
     testImplementation(libs.kxml2)

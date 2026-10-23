@@ -15,6 +15,9 @@ conscrypt = "2.5.3"
 bouncycastle = "1.81"
 jsch = "2.28.8"
 kxml2 = "2.3.0"
+commonsCompress = "1.27.1"
+xz = "1.10"
+zip4j = "2.11.5"
 sshd = "2.14.0"
 eddsa = "0.3.0"
 
@@ -48,6 +51,9 @@ jsch = { group = "com.github.mwiede", name = "jsch", version.ref = "jsch" }
 eddsa = { group = "net.i2p.crypto", name = "eddsa", version.ref = "eddsa" }
 sshd-sftp = { group = "org.apache.sshd", name = "sshd-sftp", version.ref = "sshd" }
 sshd-core = { group = "org.apache.sshd", name = "sshd-core", version.ref = "sshd" }
+commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commonsCompress" }
+xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
+zip4j = { group = "net.lingala.zip4j", name = "zip4j", version.ref = "zip4j" }
 kxml2 = { group = "net.sf.kxml", name = "kxml2", version.ref = "kxml2" }
 bouncycastle-pkix = { group = "org.bouncycastle", name = "bcpkix-jdk15to18", version.ref = "bouncycastle" }
 

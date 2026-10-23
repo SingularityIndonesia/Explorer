@@ -6,6 +6,7 @@ Nothing queued; see the sections below.
 
 ## Done
 
+- [x] Archives: .tar (plain, gz, bz2, xz), .7z and .gz open like folders; password-protected zips (ZipCrypto/AES) and 7z ask for the password.
 - [x] Transfer progress in bytes (350 MB of 1.2 GB), Cancel stops mid-file and removes the partial copy, queued count shown.
 - [x] Editing files in Android/data (saved back over the phone's own Wireless debugging connection); the text editor pauses saving when the file changed elsewhere (Reload theirs / Keep mine).
 - [x] Remote previews: SSH videos stream with seeking; downloads, uploads and transfers use their own SFTP channel so browsing isn't blocked; edited pictures show their new version.
@@ -35,8 +36,7 @@ Nothing queued; see the sections below.
 
 ## Archives
 
-- Other formats: `.tar`, `.tar.gz`, `.7z`, `.rar` (needs a library such as Apache Commons Compress).
-- Password-protected zips (java.util.zip can't decrypt them; show a clear message for now).
+- `.rar` (proprietary format; would need a dedicated library such as junrar) and password-protected 7z writing.
 - Compress files on servers (e.g. run `zip` there) instead of only this phone's files.
 
 ## Terminal

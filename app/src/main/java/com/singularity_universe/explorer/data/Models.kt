@@ -125,8 +125,8 @@ fun List<FileItem>.sortedBy(order: SortOrder): List<FileItem> {
     return sortedWith(compareByDescending<FileItem> { it.isDirectory }.then(comparator))
 }
 
-/** Zip archives open in the app like folders. */
-val FileItem.isZip: Boolean get() = !isDirectory && name.substringAfterLast('.', "").equals("zip", ignoreCase = true)
+/** Archives the app opens like folders: zip, tar (plain, gz, bz2, xz), 7z, gz. */
+val FileItem.isArchive: Boolean get() = !isDirectory && Archives.formatOf(name) != null
 
 /** Images and videos can be shown in the in-app viewer. */
 val FileItem.isPreviewable: Boolean get() = kind == FileKind.Image || kind == FileKind.Video
