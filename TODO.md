@@ -2,14 +2,19 @@
 
 ## Next up
 
-- **Background transfers.** Run large copies to/from servers and devices in a foreground service with a progress notification and cancel, so they finish when the app is left (like `TerminalService`).
 - **Audio player.** In-app playback with a mini player, background play and lock-screen/media controls (Media3 session).
 - **Storage cleanup.** Large files, duplicates, old downloads and leftover APKs, like Google Files' "Clean" tab.
 
 ## Done
 
+- [x] Background transfers: copy/move queue in a foreground service with progress, Cancel and a summary notification.
 - [x] Zip files: browse like a folder, open entries in the app, extract all/folder/selection, compress a selection.
 - [x] SSH key login: generate (Ed25519/RSA) or import keys, sign in with a key, install a key on a server, forget a server's identity.
+
+## Transfers
+
+- Byte-level progress for big single files (now it's per item), and cancelling in the middle of a file.
+- Show queued transfers, not only the current one.
 
 ## Archives
 

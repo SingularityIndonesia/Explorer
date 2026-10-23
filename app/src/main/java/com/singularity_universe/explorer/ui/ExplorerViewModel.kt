@@ -15,6 +15,7 @@ import com.singularity_universe.explorer.data.Category
 import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.FileRepository
 import com.singularity_universe.explorer.data.SortOrder
+import com.singularity_universe.explorer.data.Transfers
 import com.singularity_universe.explorer.data.isPreviewable
 import com.singularity_universe.explorer.data.isText
 import com.singularity_universe.explorer.data.isZip
@@ -93,6 +94,13 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     init {
+        // Background transfers report back here: refresh the lists and say how it went.
+        viewModelScope.launch {
+            Transfers.finished.collect { result ->
+                invalidateAll()
+                message(Transfers.summary(result))
+            }
+        }
         repo.showHidden = showHidden
         // Like Google Files: items stay in Trash for 30 days.
         viewModelScope.launch { runCatching { repo.purgeExpiredTrash() } }
@@ -473,13 +481,11 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         repo.createFolder(parent, name)
     }
 
+    /** Copies or moves the picked files into [destDir], in the background (see [Transfers]). */
     fun pasteInto(destDir: String) {
         val transfer = pendingTransfer ?: return
         pendingTransfer = null
-        val verb = if (transfer.move) "Moved" else "Copied"
-        runOperation("$verb ${plural(transfer.paths.size)}") {
-            repo.transfer(transfer.paths, destDir, transfer.move)
-        }
+        Transfers.enqueue(getApplication(), repo, Transfers.Request(transfer.paths, destDir, displayName(destDir), transfer.move))
     }
 
     companion object {

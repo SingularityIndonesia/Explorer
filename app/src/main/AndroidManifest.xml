@@ -17,6 +17,8 @@
          screen is off (wake lock), when the user allows it to skip battery optimization. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <!-- Copying and moving in the background, with a progress notification. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
@@ -98,6 +100,11 @@
                 android:label="Edit"
                 android:windowSoftInputMode="adjustResize"
                 android:theme="@style/Theme.Explorer"/>
+
+        <service
+                android:name=".data.TransferService"
+                android:exported="false"
+                android:foregroundServiceType="dataSync"/>
 
         <service
                 android:name=".remote.TerminalService"

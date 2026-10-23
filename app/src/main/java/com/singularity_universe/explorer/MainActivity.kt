@@ -1,12 +1,16 @@
 package com.singularity_universe.explorer
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -17,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -36,6 +41,7 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -44,6 +50,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -57,6 +64,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.singularity_universe.explorer.data.Transfers
 import com.singularity_universe.explorer.remote.AdbDevices
 import com.singularity_universe.explorer.remote.RemoteConnection
 import com.singularity_universe.explorer.remote.SshConnections
@@ -110,6 +118,8 @@ class MainActivity : ComponentActivity() {
         vm.attachRemote(remote)
         vm.attachSsh(ssh)
         vm.attachAdb(devices)
+        // Back before background transfers finished: the connections stay this activity's.
+        Transfers.whenIdle = null
         setContent {
             CompositionLocalProvider(
                 LocalRemoteConnection provides remote,
@@ -155,11 +165,15 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        // Not on rotation: only when the user actually leaves the app.
+        // Not on rotation: only when the user actually leaves the app. Transfers still running
+        // need the connections: they're closed once the last one finishes.
         if (isFinishing) {
-            remote.close()
-            ssh.close()
-            devices.close()
+            val close = {
+                remote.close()
+                ssh.close()
+                devices.close()
+            }
+            if (Transfers.busy) Transfers.whenIdle = close else close()
         }
         super.onDestroy()
     }
@@ -259,6 +273,7 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
                     Screen(vm, route, onOpenDrawer = { scope.launch { drawerState.open() } })
                 }
             }
+            TransferBar(Modifier.align(Alignment.BottomCenter))
             SnackbarHost(
                 snackbar,
                 Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 72.dp),
@@ -339,3 +354,48 @@ private fun DrawerItem(label: String, icon: ImageVector, onClick: () -> Unit) {
         modifier = Modifier.padding(horizontal = 12.dp),
     )
 }
+
+/** While files are copied or moved in the background: what's happening, with Cancel. */
+@Composable
+private fun TransferBar(modifier: Modifier) {
+    val progress = Transfers.progress ?: return
+    val context = LocalContext.current
+    // The progress notification needs this permission (Android 13+); asked once, when it's first useful.
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("explorer", android.content.Context.MODE_PRIVATE)
+        if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+            !prefs.getBoolean("asked_notifications_transfers", false)
+        ) {
+            prefs.edit().putBoolean("asked_notifications_transfers", true).apply()
+            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 3.dp,
+        shadowElevation = 3.dp,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        modifier = modifier.navigationBarsPadding().padding(12.dp).fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "${if (progress.request.move) "Moving" else "Copying"} ${progress.done + 1} of ${progress.total} to ${progress.request.destName}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(progress.current, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                TextButton(onClick = Transfers::cancel) { Text("Cancel") }
+            }
+            LinearProgressIndicator(
+                progress = { (progress.done + 0.5f) / progress.total },
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp, end = 8.dp),
+            )
+        }
+    }
+}
+
