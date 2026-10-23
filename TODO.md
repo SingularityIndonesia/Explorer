@@ -2,14 +2,20 @@
 
 ## Next up
 
-- **Zip files.** Browse an archive like a folder, extract all or a selection, and compress selected files into a zip. Explorer recognises archives (`FileKind.Archive`) but hands them to other apps.
 - **Background transfers.** Run large copies to/from servers and devices in a foreground service with a progress notification and cancel, so they finish when the app is left (like `TerminalService`).
 - **Audio player.** In-app playback with a mini player, background play and lock-screen/media controls (Media3 session).
 - **Storage cleanup.** Large files, duplicates, old downloads and leftover APKs, like Google Files' "Clean" tab.
 
 ## Done
 
+- [x] Zip files: browse like a folder, open entries in the app, extract all/folder/selection, compress a selection.
 - [x] SSH key login: generate (Ed25519/RSA) or import keys, sign in with a key, install a key on a server, forget a server's identity.
+
+## Archives
+
+- Other formats: `.tar`, `.tar.gz`, `.7z`, `.rar` (needs a library such as Apache Commons Compress).
+- Password-protected zips (java.util.zip can't decrypt them; show a clear message for now).
+- Compress files on servers (e.g. run `zip` there) instead of only this phone's files.
 
 ## Terminal
 

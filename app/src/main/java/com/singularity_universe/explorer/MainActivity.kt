@@ -61,6 +61,7 @@ import com.singularity_universe.explorer.remote.AdbDevices
 import com.singularity_universe.explorer.remote.RemoteConnection
 import com.singularity_universe.explorer.remote.SshConnections
 import com.singularity_universe.explorer.ui.AboutScreen
+import com.singularity_universe.explorer.ui.ArchiveScreen
 import com.singularity_universe.explorer.ui.CategoryScreen
 import com.singularity_universe.explorer.ui.DocumentPreviewScreen
 import com.singularity_universe.explorer.ui.ExplorerViewModel
@@ -283,6 +284,7 @@ private fun Screen(vm: ExplorerViewModel, route: Route, onOpenDrawer: () -> Unit
                     is Route.Viewer -> MediaViewerScreen(vm, route.items, route.index)
                     is Route.TextPreview -> TextPreviewScreen(vm, route.item)
                     is Route.DocumentPreview -> DocumentPreviewScreen(vm, route.item)
+                    is Route.Archive -> ArchiveScreen(vm, route.item, route.folder)
                 }
 }
 

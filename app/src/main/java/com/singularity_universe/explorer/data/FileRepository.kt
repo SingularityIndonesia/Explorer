@@ -354,6 +354,41 @@ class FileRepository(private val context: Context) {
         if (onDevices.isNotEmpty()) adbFiles().delete(onDevices)
     }
 
+    // ---- Zip files ----
+
+    /** The phone's Downloads folder (where archives from servers are extracted). */
+    val downloadsDir: File get() = File(rootDir, Environment.DIRECTORY_DOWNLOADS)
+
+    /**
+     * Extracts [only] (or everything) from the local zip [archive] into a new folder in [destDir],
+     * named after [archiveName]. Paths inside are taken relative to [base]. Returns the folder.
+     */
+    suspend fun extractZip(archive: File, archiveName: String, destDir: String, only: Collection<String>?, base: String): File =
+        withContext(Dispatchers.IO) {
+            val folder = uniqueTarget(File(destDir), archiveName.substringBeforeLast('.').ifEmpty { archiveName })
+            val written = try {
+                ZipArchives.extract(archive, folder, only, base)
+            } catch (e: Exception) {
+                folder.deleteRecursively()
+                throw e
+            }
+            scan(written.map { it.path })
+            folder
+        }
+
+    /** Zips [paths] into a new archive called [name] in [destDir]. Returns the archive. */
+    suspend fun compress(paths: List<String>, destDir: String, name: String): File = withContext(Dispatchers.IO) {
+        val target = uniqueTarget(File(destDir), if (name.endsWith(".zip", ignoreCase = true)) name else "$name.zip")
+        try {
+            ZipArchives.compress(paths.map(::File), target)
+        } catch (e: Exception) {
+            target.delete()
+            throw e
+        }
+        scan(listOf(target.path))
+        target
+    }
+
     // ---- Local copies of remote files (previews and editors) ----
 
     /**

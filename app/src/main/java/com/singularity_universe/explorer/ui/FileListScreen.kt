@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.BookmarkAdd
+import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.FolderOff
 import androidx.compose.material.icons.outlined.StarBorder
@@ -109,6 +110,7 @@ fun FileListScreen(
     var showDelete by remember { mutableStateOf(false) }
     var showNewFolder by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<FileItem?>(null) }
+    var compressing by remember { mutableStateOf<List<FileItem>?>(null) }
     var infoTarget by remember { mutableStateOf<FileItem?>(null) }
 
     val shown = remember(items, vm.sortOrder, sortable) {
@@ -170,6 +172,8 @@ fun FileListScreen(
                     onMove = { startTransfer(move = true) },
                     onRename = { renameTarget = it },
                     onInfo = { infoTarget = it },
+                    // Zipping works on this phone's own files (not servers or Android/data).
+                    onCompress = if (selectedItems.none { vm.repo.needsCopyToOpen(it.path) }) ({ compressing = selectedItems }) else null,
                     isShortcut = { it.path in vm.shortcuts },
                     onToggleShortcut = { vm.toggleShortcut(it.path) },
                 )
@@ -277,6 +281,14 @@ fun FileListScreen(
         }
     }
     infoTarget?.let { InfoDialog(it) { infoTarget = null } }
+    compressing?.let { items ->
+        val suggested = (items.singleOrNull()?.name?.let { if (it.contains('.') && !items.single().isDirectory) it.substringBeforeLast('.') else it } ?: "Archive") + ".zip"
+        NameDialog("Compress to zip", suggested, "Compress", onDismiss = { compressing = null }, allowUnchanged = true) { name ->
+            vm.compress(items.map { it.path }, name)
+            selected = emptySet()
+            compressing = null
+        }
+    }
 }
 
 @Composable
@@ -408,6 +420,7 @@ private fun SelectionTopBar(
     onMove: () -> Unit,
     onRename: (FileItem) -> Unit,
     onInfo: (FileItem) -> Unit,
+    onCompress: (() -> Unit)?,
     isShortcut: (FileItem) -> Boolean,
     onToggleShortcut: (FileItem) -> Unit,
 ) {
@@ -424,6 +437,7 @@ private fun SelectionTopBar(
                 item("Select all", Icons.Default.SelectAll, onSelectAll)
                 item("Copy to…", Icons.Default.ContentCopy, onCopy)
                 item("Move to…", Icons.AutoMirrored.Filled.DriveFileMove, onMove)
+                if (onCompress != null) item("Compress to zip", Icons.Outlined.FolderZip, onCompress)
                 if (single != null) {
                     item("Rename", Icons.Default.DriveFileRenameOutline) { onRename(single) }
                     item("File info", Icons.Default.Info) { onInfo(single) }

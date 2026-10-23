@@ -319,6 +319,8 @@ fun NameDialog(
     initial: String,
     confirmLabel: String,
     onDismiss: () -> Unit,
+    /** Whether the suggested name can be kept as it is (it can't for Rename). */
+    allowUnchanged: Boolean = false,
     onConfirm: (String) -> Unit,
 ) {
     // Preselect the name without its extension, like most file managers do.
@@ -340,7 +342,7 @@ fun NameDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(name) }, enabled = valid && name != initial) { Text(confirmLabel) }
+            TextButton(onClick = { onConfirm(name) }, enabled = valid && (allowUnchanged || name != initial)) { Text(confirmLabel) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

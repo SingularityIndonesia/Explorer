@@ -17,6 +17,7 @@ import com.singularity_universe.explorer.data.FileRepository
 import com.singularity_universe.explorer.data.SortOrder
 import com.singularity_universe.explorer.data.isPreviewable
 import com.singularity_universe.explorer.data.isText
+import com.singularity_universe.explorer.data.isZip
 import com.singularity_universe.explorer.data.looksLikeText
 import com.singularity_universe.explorer.data.resolveFilePath
 import com.singularity_universe.explorer.data.toFileItem
@@ -59,6 +60,8 @@ sealed interface Route {
     class TextPreview(val item: FileItem) : Route
     /** Preview of a PDF, Word, PowerPoint or Excel file. */
     class DocumentPreview(val item: FileItem) : Route
+    /** Inside a zip file: [folder] is the path within it ("" for the top). */
+    class Archive(val item: FileItem, val folder: String = "") : Route
 }
 
 /** Files picked with "Copy to" / "Move to", waiting to be pasted into a folder. */
@@ -125,6 +128,7 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
                 navigate(Route.Viewer(media, media.indexOfFirst { it.path == item.path }.coerceAtLeast(0)))
             }
             documentKindOf(item.name) != null -> navigate(Route.DocumentPreview(item))
+            item.isZip -> navigate(Route.Archive(item))
             item.isText -> navigate(Route.TextPreview(item))
             // Unknown type: look at the start of the file (remote ones only when small enough to fetch first).
             item.mimeType == "application/octet-stream" && (!remote || item.size <= SNIFF_REMOTE_MAX) -> viewModelScope.launch {
@@ -145,6 +149,26 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** A file was changed outside the file lists (e.g. in the text editor): their sizes and dates are outdated. */
     fun fileChanged() = invalidateAll()
+
+    /**
+     * Extracts entries of a zip (the downloaded [local] copy of [archive]) into a new folder: next to
+     * the zip on this phone, or in Downloads for a zip on a server or another device.
+     */
+    fun extractZip(archive: FileItem, local: File, only: Collection<String>?, base: String) {
+        val dest = if (repo.needsCopyToOpen(archive.path)) repo.downloadsDir.path else parentOf(archive.path)
+        runOperation(null) {
+            val folder = repo.extractZip(local, archive.name, dest, only, base)
+            message("Extracted to ${displayName(folder.parent ?: dest)}/${folder.name}")
+        }
+    }
+
+    /** Zips [paths] (files on this phone) into [name] beside the first of them. */
+    fun compress(paths: List<String>, name: String) {
+        runOperation(null) {
+            val zip = repo.compress(paths, parentOf(paths.first()), name)
+            message("Created ${zip.name}")
+        }
+    }
 
     /**
      * An editor saved [saved], made from a local copy of the remote file [original]: replacing it
