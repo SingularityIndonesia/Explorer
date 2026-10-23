@@ -19,6 +19,7 @@ import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.FileRepository
 import com.singularity_universe.explorer.data.SortOrder
 import com.singularity_universe.explorer.data.Transfers
+import com.singularity_universe.explorer.data.VideoExports
 import com.singularity_universe.explorer.data.isPreviewable
 import com.singularity_universe.explorer.data.isText
 import com.singularity_universe.explorer.data.isArchive
@@ -40,6 +41,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -99,6 +101,10 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     init {
+        // A video saved in the background (its editor may be closed): lists show the new file.
+        viewModelScope.launch {
+            VideoExports.finished.collect { if (it.saved != null) invalidateAll() }
+        }
         // Background transfers report back here: refresh the lists and say how it went.
         viewModelScope.launch {
             Transfers.finished.collect { result ->
@@ -251,6 +257,14 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         runOperation(null) {
             val zip = repo.compress(paths, parentOf(paths.first()), name)
             message("Created ${zip.name}")
+        }
+    }
+
+    /** A remote video's editor was hidden while saving: upload the result once the save finishes. */
+    fun uploadWhenExported(copy: File, original: FileItem) {
+        viewModelScope.launch {
+            val result = VideoExports.finished.first { it.request.source.path == copy.path }
+            result.saved?.let { saveEditToRemote(it, original, copy) }
         }
     }
 

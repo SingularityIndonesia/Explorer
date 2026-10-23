@@ -105,7 +105,8 @@ fun VideoEditorScreen(vm: VideoEditorViewModel, onClose: () -> Unit, onSaved: (F
     var confirmDiscard by remember { mutableStateOf(false) }
 
     fun close() {
-        if (vm.edited) confirmDiscard = true else onClose()
+        // While saving, leaving is fine: the save carries on in the background.
+        if (vm.exportProgress != null || !vm.edited) onClose() else confirmDiscard = true
     }
 
     fun save(replace: Boolean) {
@@ -211,10 +212,10 @@ fun VideoEditorScreen(vm: VideoEditorViewModel, onClose: () -> Unit, onSaved: (F
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                    Text("${(progress * 100).roundToInt()}%")
+                    Text("${(progress * 100).roundToInt()}% · Hide to keep saving in the background")
                 }
             },
-            confirmButton = {},
+            confirmButton = { TextButton(onClick = ::close) { Text("Hide") } },
             dismissButton = { TextButton(onClick = vm::cancelExport) { Text("Cancel") } },
         )
     }

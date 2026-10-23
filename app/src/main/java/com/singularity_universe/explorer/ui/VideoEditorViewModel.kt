@@ -4,7 +4,6 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.RectF
 import android.media.MediaMetadataRetriever
-import android.media.MediaScannerConnection
 import android.net.Uri
 import android.util.Log
 import androidx.annotation.OptIn
@@ -19,19 +18,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.effect.Crop
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.transformer.Composition
-import androidx.media3.transformer.EditedMediaItem
-import androidx.media3.transformer.EditedMediaItemSequence
-import androidx.media3.transformer.Effects
-import androidx.media3.transformer.ExportException
-import androidx.media3.transformer.ExportResult
-import androidx.media3.transformer.ProgressHolder
-import androidx.media3.transformer.Transformer
+import com.singularity_universe.explorer.data.VideoExports
 import java.io.File
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -85,12 +75,11 @@ class VideoEditorViewModel(app: Application, path: String) : AndroidViewModel(ap
     var positionMs by mutableLongStateOf(0L)
         private set
 
-    /** 0..1 while saving, null otherwise. */
-    var exportProgress by mutableStateOf<Float?>(null)
-        private set
-    private var transformer: Transformer? = null
-    private var exportTemp: File? = null
-    private var progressJob: Job? = null
+    /** 0..1 while this video is being saved, null otherwise. */
+    val exportProgress: Float? get() = if (VideoExports.current?.source == file) VideoExports.progress else null
+
+    /** Told when the export started from this editor finishes (while the editor is open). */
+    private var pendingDone: ((File?, String?) -> Unit)? = null
 
     val trimmed: Boolean get() = startMs > 0 || endMs < durationMs
     val cropped: Boolean get() = crop.left > 0.5f || crop.top > 0.5f || crop.right < width - 0.5f || crop.bottom < height - 0.5f
@@ -103,6 +92,13 @@ class VideoEditorViewModel(app: Application, path: String) : AndroidViewModel(ap
             }
         })
         viewModelScope.launch { load() }
+        viewModelScope.launch {
+            VideoExports.finished.collect { result ->
+                if (result.request.source != file || result.cancelled) return@collect
+                pendingDone?.invoke(result.saved, result.error)
+                pendingDone = null
+            }
+        }
         // Follows playback, and loops it over the kept part.
         viewModelScope.launch {
             while (isActive) {
@@ -186,103 +182,31 @@ class VideoEditorViewModel(app: Application, path: String) : AndroidViewModel(ap
 
     /**
      * Saves the kept part and frame as an MP4: a copy next to the original, or over the original
-     * when [replace] (MP4 files only). Calls [done] with the saved file, or null and a reason.
+     * when [replace] (MP4 files only). It runs in [VideoExports], so it carries on if the editor is
+     * left; [done] gets the saved file, or null and a reason, if the editor is still open then.
      */
     fun export(replace: Boolean, done: (File?, String?) -> Unit) {
-        if (exportProgress != null) return
+        if (VideoExports.current != null) return
         player.pause()
+        pendingDone = done
         val target = if (replace && canReplace()) file else copyTarget(file)
-        start(target, toneMap = false, done)
+        VideoExports.start(getApplication(), VideoExports.Request(file, target, startMs, endMs, if (cropped) cropValues() else null, hdr))
     }
 
-    private fun start(target: File, toneMap: Boolean, done: (File?, String?) -> Unit) {
-        // Written beside the target and renamed over it at the end, so a failure leaves the original intact.
-        val temp = File(target.parentFile, ".${target.nameWithoutExtension}.saving.mp4")
-        temp.delete()
-        exportTemp = temp
-        val clipping = MediaItem.ClippingConfiguration.Builder()
-            .setStartPositionMs(startMs)
-            .setEndPositionMs(endMs)
-            .build()
-        val item = MediaItem.Builder().setUri(Uri.fromFile(file)).setClippingConfiguration(clipping).build()
-        val videoEffects = if (cropped) listOf(cropEffect()) else emptyList()
-        val edited = EditedMediaItem.Builder(item).setEffects(Effects(emptyList(), videoEffects)).build()
-        val composition = Composition.Builder(EditedMediaItemSequence.withAudioAndVideoFrom(listOf(edited)))
-            .apply { if (toneMap) setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL) }
-            .build()
+    /** The kept frame in normalized coordinates (-1..1, y pointing up): left, right, bottom, top. */
+    private fun cropValues(): FloatArray = floatArrayOf(
+        2 * crop.left / width - 1,
+        2 * crop.right / width - 1,
+        1 - 2 * crop.bottom / height,
+        1 - 2 * crop.top / height,
+    )
 
-        val listener = object : Transformer.Listener {
-            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                finishExport()
-                val saved = temp.renameTo(target) || runCatching {
-                    temp.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
-                    temp.delete()
-                }.isSuccess
-                if (saved) {
-                    MediaScannerConnection.scanFile(getApplication(), arrayOf(target.path), null, null)
-                    done(target, null)
-                } else {
-                    temp.delete()
-                    done(null, "Couldn't write the video")
-                }
-            }
-
-            override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
-                finishExport()
-                temp.delete()
-                Log.w("Explorer", "Video export failed", exportException)
-                // Not every phone can encode HDR: try again as standard dynamic range.
-                if (hdr && !toneMap) start(target, toneMap = true, done)
-                else done(null, exportException.message ?: "Couldn't save the video")
-            }
-        }
-
-        val transformer = Transformer.Builder(getApplication())
-            // Trimming alone copies most of the video as it is instead of re-encoding all of it.
-            .experimentalSetTrimOptimizationEnabled(videoEffects.isEmpty())
-            .addListener(listener)
-            .build()
-        this.transformer = transformer
-        exportProgress = 0f
-        transformer.start(composition, temp.path)
-
-        val holder = ProgressHolder()
-        progressJob = viewModelScope.launch {
-            while (isActive && exportProgress != null) {
-                if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
-                    exportProgress = holder.progress / 100f
-                }
-                delay(200)
-            }
-        }
-    }
-
-    /** The kept frame as a Crop effect, in normalized coordinates (-1..1, y pointing up). */
-    private fun cropEffect(): Crop {
-        val left = 2 * crop.left / width - 1
-        val right = 2 * crop.right / width - 1
-        val top = 1 - 2 * crop.top / height
-        val bottom = 1 - 2 * crop.bottom / height
-        return Crop(left, right, bottom, top)
-    }
-
-    fun cancelExport() {
-        transformer?.cancel()
-        exportTemp?.delete()
-        finishExport()
-    }
-
-    private fun finishExport() {
-        transformer = null
-        progressJob?.cancel()
-        exportProgress = null
-    }
+    fun cancelExport() = VideoExports.cancel()
 
     fun canReplace(): Boolean = file.extension.equals("mp4", ignoreCase = true)
 
     override fun onCleared() {
-        transformer?.cancel()
-        exportTemp?.takeIf { transformer != null }?.delete()
+        // A save in progress carries on in VideoExports.
         player.release()
     }
 

@@ -115,6 +115,11 @@
         </service>
 
         <service
+                android:name=".data.VideoExportService"
+                android:exported="false"
+                android:foregroundServiceType="dataSync"/>
+
+        <service
                 android:name=".data.TransferService"
                 android:exported="false"
                 android:foregroundServiceType="dataSync"/>

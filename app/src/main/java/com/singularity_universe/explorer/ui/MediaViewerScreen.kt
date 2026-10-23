@@ -89,6 +89,7 @@ import coil.request.ImageRequest
 import com.singularity_universe.explorer.ImageEditorActivity
 import com.singularity_universe.explorer.VideoEditorActivity
 import com.singularity_universe.explorer.data.FileItem
+import com.singularity_universe.explorer.data.VideoExports
 import com.singularity_universe.explorer.data.FileKind
 import com.singularity_universe.explorer.data.thumbnail
 import com.singularity_universe.explorer.remote.SftpDataSource
@@ -124,7 +125,14 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
     val editor = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val remote = editingRemote
         editingRemote = null
-        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        if (result.resultCode != Activity.RESULT_OK) {
+            // The video editor was hidden while still saving: the upload happens when the save ends.
+            val original = remote?.let { (path, _) -> items.firstOrNull { it.path == path } }
+            if (remote != null && original != null && VideoExports.current?.source?.path == remote[1]) {
+                vm.uploadWhenExported(File(remote[1]), original)
+            }
+            return@rememberLauncherForActivityResult
+        }
         editVersion++
         val saved = result.data?.getStringExtra(ImageEditorActivity.EXTRA_SAVED)
         val original = remote?.let { (path, _) -> items.firstOrNull { it.path == path } }
