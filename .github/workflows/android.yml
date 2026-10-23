@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Whether the release signing secrets exist (a step's own env isn't visible to its `if`).
+      HAS_KEYSTORE: ${{ secrets.EXPLORER_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +34,28 @@ jobs:
         with:
           name: explorer-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      # Signed release, only when the signing secrets are set in the repository:
+      # EXPLORER_KEYSTORE_BASE64 (the keystore file, base64), EXPLORER_STORE_PASSWORD,
+      # EXPLORER_KEY_ALIAS and EXPLORER_KEY_PASSWORD.
+      - name: Build signed release APK
+        if: github.event_name == 'push' && env.HAS_KEYSTORE == 'true'
+        env:
+          KEYSTORE: ${{ secrets.EXPLORER_KEYSTORE_BASE64 }}
+          EXPLORER_STORE_PASSWORD: ${{ secrets.EXPLORER_STORE_PASSWORD }}
+          EXPLORER_KEY_ALIAS: ${{ secrets.EXPLORER_KEY_ALIAS }}
+          EXPLORER_KEY_PASSWORD: ${{ secrets.EXPLORER_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          EXPLORER_STORE_FILE="$RUNNER_TEMP/release.jks" ./gradlew assembleRelease
+          rm -f "$RUNNER_TEMP/release.jks"
+
+      - name: Upload release APK
+        if: github.event_name == 'push' && hashFiles('app/build/outputs/apk/release/app-release.apk') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: explorer-release
+          path: app/build/outputs/apk/release/app-release.apk
 
       - name: Upload test reports
         if: failure()

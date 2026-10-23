@@ -12,6 +12,7 @@ Nothing queued; see the sections below.
 - [x] Remote previews: SSH videos stream with seeking; downloads, uploads and transfers use their own SFTP channel so browsing isn't blocked; edited pictures show their new version.
 - [x] Release build: signing from keystore.properties or EXPLORER_* variables; the classes JSch, libadb and the services load by name checked in the R8 output.
 - [x] CI: GitHub Actions runs the unit tests and builds the debug APK on every push and pull request.
+- [x] CI builds a signed release APK on pushes to main when the signing secrets are set (EXPLORER_KEYSTORE_BASE64, EXPLORER_STORE_PASSWORD, EXPLORER_KEY_ALIAS, EXPLORER_KEY_PASSWORD).
 - [x] Video editor: saving continues in the background with a notification (Hide in the progress dialog); remote videos still upload when it ends.
 - [x] Picture editor: pinch to zoom and pan while editing (any tool), with a Fit chip to go back.
 - [x] Audio: a folder on an SSH server plays as a streamed queue; playback resumes where it stopped after reopening the app.
@@ -56,5 +57,4 @@ Nothing queued; see the sections below.
 
 ## Project
 
-- A signed release job in CI (needs the keystore and passwords as repository secrets).
 - Play Store: justification for the `specialUse` foreground service and the battery-optimization exemption request, if published.
