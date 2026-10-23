@@ -20,3 +20,8 @@ local.properties
 # JVM crash dumps
 hs_err_pid*.log
 replay_pid*.log
+
+# Release signing (see app/build.gradle.kts)
+keystore.properties
+*.jks
+*.keystore

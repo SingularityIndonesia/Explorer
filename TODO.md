@@ -6,6 +6,8 @@ Nothing queued; see the sections below.
 
 ## Done
 
+- [x] Release build: signing from keystore.properties or EXPLORER_* variables; the classes JSch, libadb and the services load by name checked in the R8 output.
+- [x] CI: GitHub Actions runs the unit tests and builds the debug APK on every push and pull request.
 - [x] Terminal: select and copy text, tap links, several sessions (tabs) per server, extra keys hide with a hardware keyboard.
 - [x] Free up space: large files, duplicates (size → quick hash → SHA-256), old downloads, installer files; deleting goes to Trash.
 - [x] Audio player: background playback (Media3 session: notification, lock screen, headphones), folder queue, mini player and Now playing sheet.
@@ -52,6 +54,5 @@ Nothing queued; see the sections below.
 
 ## Project
 
-- **Release build:** signing config, and check that R8 doesn't strip anything used by reflection (Media3 Transformer, JSch, libadb, Conscrypt).
-- **CI:** run `testDebugUnitTest` (terminal replay tests, document reader tests) and a debug build on every push.
+- A signed release job in CI (needs the keystore and passwords as repository secrets).
 - Play Store: justification for the `specialUse` foreground service and the battery-optimization exemption request, if published.

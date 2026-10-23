@@ -1,6 +1,25 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+/**
+ * Release signing, from keystore.properties in the project root (storeFile, storePassword,
+ * keyAlias, keyPassword) or the same values in EXPLORER_* environment variables (for CI).
+ * Neither is in git; without them, release builds are left unsigned.
+ */
+val releaseSigning: Map<String, String>? = run {
+    val file = rootProject.file("keystore.properties")
+    val values = if (file.exists()) {
+        Properties().apply { file.inputStream().use(::load) }.let { p -> p.stringPropertyNames().associateWith { p.getProperty(it) } }
+    } else {
+        listOf("storeFile", "storePassword", "keyAlias", "keyPassword").mapNotNull { key ->
+            System.getenv("EXPLORER_" + key.replace(Regex("([A-Z])"), "_$1").uppercase())?.let { key to it }
+        }.toMap()
+    }
+    values.takeIf { it.keys.containsAll(listOf("storeFile", "storePassword", "keyAlias", "keyPassword")) }
 }
 
 android {
@@ -19,6 +38,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        releaseSigning?.let { values ->
+            create("release") {
+                storeFile = rootProject.file(values.getValue("storeFile"))
+                storePassword = values.getValue("storePassword")
+                keyAlias = values.getValue("keyAlias")
+                keyPassword = values.getValue("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = true
@@ -26,6 +56,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
