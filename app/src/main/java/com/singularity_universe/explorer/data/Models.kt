@@ -29,7 +29,7 @@ data class FileItem(
             mimeType.startsWith("audio/") -> FileKind.Audio
             mimeType == APK_MIME -> FileKind.Apk
             mimeType in ARCHIVE_MIMES -> FileKind.Archive
-            mimeType.startsWith("text/") || mimeType in DOCUMENT_MIMES -> FileKind.Document
+            mimeType.startsWith("text/") || mimeType in DOCUMENT_MIMES || mimeType in TEXT_MIMES -> FileKind.Document
             else -> FileKind.Other
         }
 }
@@ -96,10 +96,7 @@ fun mimeTypeOf(name: String): String {
     val ext = name.substringAfterLast('.', "").lowercase()
     if (ext.isEmpty()) return "application/octet-stream"
     return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
-        ?: when (ext) {
-            "kt", "kts", "gradle", "md", "log", "properties" -> "text/plain"
-            else -> "application/octet-stream"
-        }
+        ?: if (ext in TEXT_EXTENSIONS) "text/plain" else "application/octet-stream"
 }
 
 /** [showHidden] only affects a folder's item count. */

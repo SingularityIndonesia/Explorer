@@ -58,6 +58,14 @@
                 android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
                 android:theme="@style/Theme.Explorer"/>
 
+        <!-- Text editor: adjustResize keeps the cursor above the keyboard. -->
+        <activity
+                android:name=".TextEditorActivity"
+                android:exported="false"
+                android:label="Edit"
+                android:windowSoftInputMode="adjustResize"
+                android:theme="@style/Theme.Explorer"/>
+
         <receiver
                 android:name=".remote.PairingReceiver"
                 android:exported="false"/>

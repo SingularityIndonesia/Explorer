@@ -127,7 +127,7 @@ fun HomeScreen(vm: ExplorerViewModel, onOpenDrawer: () -> Unit) {
                 RecentsRow(
                     items = recents,
                     starred = vm.starred,
-                    onOpen = { if (!vm.openInViewer(it, recents.orEmpty())) context.openFile(it) },
+                    onOpen = { vm.openInApp(it, recents.orEmpty()) { file -> context.openFile(file) } },
                     onShare = { context.shareFiles(listOf(it)) },
                     onStar = { vm.toggleStar(listOf(it.path)) },
                     onInfo = { infoTarget = it },

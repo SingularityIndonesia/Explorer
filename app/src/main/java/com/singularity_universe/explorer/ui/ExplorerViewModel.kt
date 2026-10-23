@@ -16,6 +16,8 @@ import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.FileRepository
 import com.singularity_universe.explorer.data.SortOrder
 import com.singularity_universe.explorer.data.isPreviewable
+import com.singularity_universe.explorer.data.isText
+import com.singularity_universe.explorer.data.looksLikeText
 import com.singularity_universe.explorer.data.resolveFilePath
 import com.singularity_universe.explorer.data.toFileItem
 import com.singularity_universe.explorer.remote.AdbDevices
@@ -53,6 +55,8 @@ sealed interface Route {
     data class CategoryFiles(val category: Category) : Route
     /** Swipeable viewer over [items] (images and videos), starting at [index]. */
     class Viewer(val items: List<FileItem>, val index: Int) : Route
+    /** Read-only view of a text file, with an Edit button that opens the editor. */
+    class TextPreview(val item: FileItem) : Route
 }
 
 /** Files picked with "Copy to" / "Move to", waiting to be pasted into a folder. */
@@ -105,15 +109,27 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Opens images and videos in the in-app viewer, letting the user swipe through the other
-     * previewable files in [siblings]. Returns false for anything else.
+     * Opens a local file in the app: images and videos in the viewer (swiping through the other
+     * previewable files in [siblings]), and text in the text viewer. Files of unknown type are
+     * checked for text first. Anything else goes to [otherwise], usually another app.
      */
-    fun openInViewer(item: FileItem, siblings: List<FileItem>): Boolean {
-        if (!item.isPreviewable) return false
-        val media = siblings.filter { it.isPreviewable }.ifEmpty { listOf(item) }
-        navigate(Route.Viewer(media, media.indexOfFirst { it.path == item.path }.coerceAtLeast(0)))
-        return true
+    fun openInApp(item: FileItem, siblings: List<FileItem>, otherwise: (FileItem) -> Unit) {
+        when {
+            item.isPreviewable -> {
+                val media = siblings.filter { it.isPreviewable }.ifEmpty { listOf(item) }
+                navigate(Route.Viewer(media, media.indexOfFirst { it.path == item.path }.coerceAtLeast(0)))
+            }
+            item.isText -> navigate(Route.TextPreview(item))
+            item.mimeType == "application/octet-stream" -> viewModelScope.launch {
+                if (withContext(Dispatchers.IO) { looksLikeText(item.file) }) navigate(Route.TextPreview(item))
+                else otherwise(item)
+            }
+            else -> otherwise(item)
+        }
     }
+
+    /** A file was changed outside the file lists (e.g. in the text editor): their sizes and dates are outdated. */
+    fun fileChanged() = invalidateAll()
 
     // ---- Remote access ----
 

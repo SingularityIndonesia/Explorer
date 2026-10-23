@@ -77,6 +77,7 @@ import com.singularity_universe.explorer.ui.Route
 import com.singularity_universe.explorer.ui.SearchScreen
 import com.singularity_universe.explorer.ui.SettingsScreen
 import com.singularity_universe.explorer.ui.StarredScreen
+import com.singularity_universe.explorer.ui.TextPreviewScreen
 import com.singularity_universe.explorer.ui.TrashScreen
 import com.singularity_universe.explorer.ui.theme.ExplorerTheme
 import kotlinx.coroutines.launch
@@ -275,6 +276,7 @@ private fun Screen(vm: ExplorerViewModel, route: Route, onOpenDrawer: () -> Unit
                     is Route.Folder -> FolderScreen(vm, route.path, route.highlight)
                     is Route.CategoryFiles -> CategoryScreen(vm, route.category)
                     is Route.Viewer -> MediaViewerScreen(vm, route.items, route.index)
+                    is Route.TextPreview -> TextPreviewScreen(vm, route.item)
                 }
 }
 

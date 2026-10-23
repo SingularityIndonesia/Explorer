@@ -131,8 +131,7 @@ fun FileListScreen(
             item.isDirectory -> vm.navigate(Route.Folder(item.path))
             // Other apps can't read Android/data or a server, so hand them a copy.
             vm.repo.needsCopyToOpen(item.path) -> vm.openRestricted(item) { context.openFile(it) }
-            vm.openInViewer(item, shown.orEmpty()) -> Unit
-            else -> context.openFile(item)
+            else -> vm.openInApp(item, shown.orEmpty()) { context.openFile(it) }
         }
     }
 
