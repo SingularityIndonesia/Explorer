@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,11 +48,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,6 +79,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
 import androidx.media3.ui.compose.modifiers.resizeWithContentScale
@@ -86,8 +91,11 @@ import com.singularity_universe.explorer.VideoEditorActivity
 import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.FileKind
 import com.singularity_universe.explorer.data.thumbnail
+import com.singularity_universe.explorer.remote.SftpDataSource
+import com.singularity_universe.explorer.remote.SshConnections
 import java.io.File
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Full-screen viewer: swipe left/right through [items]; images are shown, videos play. */
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
@@ -106,12 +114,18 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
     val copies = remember { mutableStateMapOf<String, File>() }
     // Editing a remote file: [remote path, local copy], kept across activity recreation.
     var editingRemote by rememberSaveable { mutableStateOf<List<String>?>(null) }
+    // Bumped after an edit: pages are drawn again, so a replaced picture shows its new version.
+    var editVersion by remember { mutableIntStateOf(0) }
+    // Downloading a streamed video before editing it.
+    var preparingEdit by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     // A saved edit is a new or changed file: folder lists and Recents must show it; a remote file's
     // edit goes back to its server or device.
     val editor = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val remote = editingRemote
         editingRemote = null
         if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        editVersion++
         val saved = result.data?.getStringExtra(ImageEditorActivity.EXTRA_SAVED)
         val original = remote?.let { (path, _) -> items.firstOrNull { it.path == path } }
         if (remote != null && original != null && saved != null) vm.saveEditToRemote(File(saved), original, File(remote[1]))
@@ -133,10 +147,24 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                 if (pagerState.settledPage != page) zoom.reset()
             }
             // Files on a server or device are downloaded first: pictures as they come near, videos
-            // (which can be large) only once their page is the current one.
+            // (which can be large) only once their page is the current one. Videos on SSH servers
+            // aren't downloaded at all: they stream.
             val isCurrent = pagerState.settledPage == page
             val load = item.kind != FileKind.Video || isCurrent
-            when (val copy = rememberLocalCopy(vm, item, enabled = load)) {
+            val stream = item.kind == FileKind.Video && vm.repo.isSsh(item.path)
+            key(editVersion) {
+            if (stream) {
+                VideoPage(
+                    item = item,
+                    zoom = zoom,
+                    isCurrent = isCurrent,
+                    controlsVisible = chromeVisible,
+                    holdControls = menuOpen,
+                    onToggleControls = { chromeVisible = !chromeVisible },
+                    onHideControls = { chromeVisible = false },
+                    streaming = true,
+                )
+            } else when (val copy = rememberLocalCopy(vm, item, enabled = load)) {
                 is LocalCopy.Ready -> {
                     val shown = if (copy.file.path == item.path) item else item.copy(path = copy.file.path, mediaUri = null)
                     if (shown !== item) SideEffect { copies[item.path] = copy.file }
@@ -161,6 +189,7 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                     if (load) LocalCopyStatus(copy, item, color = Color.White)
                     else Icon(Icons.Outlined.PlayCircle, null, Modifier.size(72.dp), tint = Color.White)
                 }
+            }
             }
         }
 
@@ -192,16 +221,34 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                     val remote = vm.repo.needsCopyToOpen(current.path)
                     val copy = copies[current.path]
                     if (!remote || vm.repo.canWriteBack(current.path)) {
-                        IconButton(
+                        fun launch(path: String) {
+                            if (remote) editingRemote = listOf(current.path, path)
+                            editor.launch(
+                                if (current.kind == FileKind.Video) VideoEditorActivity.intent(context, path)
+                                else ImageEditorActivity.intent(context, path)
+                            )
+                        }
+                        if (preparingEdit) {
+                            CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else IconButton(
                             onClick = {
-                                val path = if (remote) copy?.path ?: return@IconButton else current.path
-                                if (remote) editingRemote = listOf(current.path, path)
-                                editor.launch(
-                                    if (current.kind == FileKind.Video) VideoEditorActivity.intent(context, path)
-                                    else ImageEditorActivity.intent(context, path)
-                                )
+                                when {
+                                    !remote -> launch(current.path)
+                                    copy != null -> launch(copy.path)
+                                    // A streamed video: the editor needs it on the phone.
+                                    else -> scope.launch {
+                                        preparingEdit = true
+                                        runCatching { vm.repo.cachedCopy(current) }
+                                            .onSuccess { file ->
+                                                copies[current.path] = file
+                                                launch(file.path)
+                                            }
+                                            .onFailure { vm.message(it.message ?: "Couldn't download this video") }
+                                        preparingEdit = false
+                                    }
+                                }
                             },
-                            enabled = !remote || copy != null,
+                            enabled = !remote || copy != null || current.kind == FileKind.Video,
                         ) {
                             Icon(Icons.Outlined.Edit, "Edit")
                         }
@@ -265,6 +312,8 @@ private fun VideoPage(
     holdControls: Boolean,
     onToggleControls: () -> Unit,
     onHideControls: () -> Unit,
+    /** Read straight from an SSH server (see [SftpDataSource]) instead of a file on the phone. */
+    streaming: Boolean = false,
 ) {
     val tapModifier = Modifier
         .fillMaxSize()
@@ -282,7 +331,14 @@ private fun VideoPage(
     val lifecycleOwner = LocalLifecycleOwner.current
     val player = remember(item.path) {
         ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(item.file.toURI().toString()))
+            if (streaming) {
+                setMediaSource(
+                    ProgressiveMediaSource.Factory(SftpDataSource.Factory(SshConnections.get(context)))
+                        .createMediaSource(MediaItem.fromUri(item.path))
+                )
+            } else {
+                setMediaItem(MediaItem.fromUri(item.file.toURI().toString()))
+            }
             prepare()
             playWhenReady = true
         }

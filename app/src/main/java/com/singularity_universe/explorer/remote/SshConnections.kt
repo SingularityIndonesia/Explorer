@@ -196,6 +196,25 @@ class SshConnections private constructor(private val app: Context) {
         }
     }
 
+    /**
+     * A channel of its own on the server's session, for long transfers and streaming, so browsing
+     * (on the shared channel) doesn't wait for them. The caller disconnects it.
+     */
+    suspend fun openChannel(id: String): ChannelSftp = withContext(Dispatchers.IO) {
+        val session = lockFor(id).withLock { connected(id).session }
+        (session.openChannel("sftp") as ChannelSftp).apply { connect(CONNECT_TIMEOUT_MS) }
+    }
+
+    /** Runs [block] on a channel of its own (see [openChannel]), closed afterwards. */
+    suspend fun <T> separateSftp(id: String, block: (ChannelSftp) -> T): T = withContext(Dispatchers.IO) {
+        val channel = openChannel(id)
+        try {
+            block(channel)
+        } finally {
+            channel.disconnect()
+        }
+    }
+
     /** Runs a command on the server (used for server-side copies). */
     suspend fun exec(id: String, command: String): ShellResult = withContext(Dispatchers.IO) {
         lockFor(id).withLock {

@@ -6,6 +6,7 @@ Nothing queued; see the sections below.
 
 ## Done
 
+- [x] Remote previews: SSH videos stream with seeking; downloads, uploads and transfers use their own SFTP channel so browsing isn't blocked; edited pictures show their new version.
 - [x] Release build: signing from keystore.properties or EXPLORER_* variables; the classes JSch, libadb and the services load by name checked in the R8 output.
 - [x] CI: GitHub Actions runs the unit tests and builds the debug APK on every push and pull request.
 - [x] Terminal: select and copy text, tap links, several sessions (tabs) per server, extra keys hide with a hardware keyboard.
@@ -43,13 +44,11 @@ Nothing queued; see the sections below.
 
 ## Editors and previews
 
+- Stream videos on other Android devices too (their sync protocol can't start mid-file; needs another way to read ranges).
 - Picture editor: pinch to zoom while editing; work on pictures larger than 4096 px at full size.
 - Video editor: keep saving when the editor is left (currently cancels); keep the original container (`.mkv`, `.webm`) instead of always MP4.
 - Document preview: Word headers/footers and page breaks; PowerPoint charts, SmartArt, rotated shapes; the older `.doc`/`.ppt`/`.xls` formats.
 - Text editor: handle a file changed on the server while it's being edited (it's last-write-wins now).
-- Remote previews: stream videos over SFTP/ADB instead of downloading the whole file first.
-- Remote previews: a big download holds the server's SFTP session, so browsing that server waits until it finishes. Give downloads their own channel.
-- Remote previews: after "Replace original" from the viewer, the viewer still shows the old picture until it's reopened.
 - Remote files in Android/data are preview-only. Saving back would need a push path through the Wireless debugging connection.
 
 ## Project

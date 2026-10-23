@@ -97,7 +97,8 @@ class SshFiles(val connections: SshConnections) {
         var target = File(localDir, from.name)
         var i = 1
         while (target.exists()) target = File(localDir, numbered(from.name, i++))
-        connections.sftp(from.hostId) { sftp, _ -> downloadRecursively(sftp, from.path, target) }
+        // Transfers use a channel of their own, so browsing the server isn't blocked meanwhile.
+        connections.separateSftp(from.hostId) { sftp -> downloadRecursively(sftp, from.path, target) }
         return target
     }
 
@@ -105,19 +106,19 @@ class SshFiles(val connections: SshConnections) {
     suspend fun downloadTo(source: String, target: File) {
         val from = parse(source)
         target.parentFile?.mkdirs()
-        connections.sftp(from.hostId) { sftp, _ -> sftp.get(from.path, target.path) }
+        connections.separateSftp(from.hostId) { sftp -> sftp.get(from.path, target.path) }
     }
 
     /** Saves a local file over [path] on the server (an edited copy going back). */
     suspend fun uploadTo(local: File, path: String) {
         val to = parse(path)
-        connections.sftp(to.hostId) { sftp, _ -> sftp.put(local.path, to.path, ChannelSftp.OVERWRITE) }
+        connections.separateSftp(to.hostId) { sftp -> sftp.put(local.path, to.path, ChannelSftp.OVERWRITE) }
     }
 
     /** Uploads a local file or folder into [destDir] on the server. Returns the remote path. */
     suspend fun upload(local: File, destDir: String): String {
         val dest = parse(destDir)
-        return connections.sftp(dest.hostId) { sftp, _ ->
+        return connections.separateSftp(dest.hostId) { sftp ->
             val target = uniqueTarget(sftp, dest, local.name)
             uploadRecursively(sftp, local, target.path)
             target.toString()
