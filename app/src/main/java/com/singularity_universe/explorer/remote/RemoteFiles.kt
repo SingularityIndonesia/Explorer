@@ -47,6 +47,20 @@ class RemoteFiles(private val connection: RemoteConnection) {
     /** Copies a hidden file into app storage so other apps can open it. */
     suspend fun pull(path: String, destination: File) = connection.pull(path, destination)
 
+    /** Size and modification time of a file, to notice when it changed (or null if it's gone). */
+    suspend fun stamp(path: String): String? =
+        connection.exec("stat -c '%s:%Y' ${shellQuote(path)}").takeIf { it.ok }?.output?.trim()
+
+    /** Saves a local file over [path] in Android/data (an edited copy going back). */
+    suspend fun push(source: File, path: String) = connection.push(source, path)
+
+    /** Uploads a local file into [dir] in Android/data under a free name. Returns its path. */
+    suspend fun pushNew(source: File, dir: String): String {
+        val target = uniqueTarget(dir, source.name)
+        connection.push(source, target)
+        return target
+    }
+
     private suspend fun exists(path: String): Boolean =
         connection.exec("[ -e ${shellQuote(path)} ] && echo yes || echo no").output.trim() == "yes"
 

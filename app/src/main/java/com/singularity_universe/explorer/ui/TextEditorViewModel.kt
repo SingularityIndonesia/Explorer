@@ -51,6 +51,18 @@ class TextEditorViewModel(app: Application, path: String, private val remotePath
 
     /** The local copy has changes the server doesn't have yet. */
     private var pendingUpload = false
+
+    /** The file was changed elsewhere since it was opened (or last saved): saving waits for a choice. */
+    var conflict by mutableStateOf(false)
+        private set
+
+    /** Size and date of the file (on the server, for a remote copy) as last seen; null if unknown. */
+    private var stamp: String? = null
+
+    private suspend fun currentStamp(): String? = withContext(Dispatchers.IO) {
+        if (remotePath != null) runCatching { repo.remoteStamp(remotePath) }.getOrNull()
+        else file.takeIf { it.exists() }?.let { "${it.length()}:${it.lastModified()}" }
+    }
     val isJson = isJsonFile(file.name, mimeTypeOf(file.name))
 
     sealed interface State {
@@ -98,9 +110,45 @@ class TextEditorViewModel(app: Application, path: String, private val remotePath
         savedText = content.text
         crlf = content.crlf
         bom = content.bom
+        stamp = currentStamp()
         val history = EditHistory(TextFieldValue(content.text))
         state = State.Ready(history)
         autosave(history)
+    }
+
+    /** "Reload": drops the edits and opens the file as it is now (downloading a remote one again). */
+    fun reload() {
+        viewModelScope.launch {
+            saveLock.withLock {
+                try {
+                    if (remotePath != null) repo.refreshCopy(remotePath, file)
+                    val content = withContext(Dispatchers.IO) { readTextFile(file, limit = MAX_EDIT_BYTES + 1) }
+                    savedText = content.text
+                    crlf = content.crlf
+                    bom = content.bom
+                    pendingUpload = false
+                    conflict = false
+                    stamp = currentStamp()
+                    val history = EditHistory(TextFieldValue(content.text))
+                    state = State.Ready(history)
+                    saveStatus = SaveStatus.Saved
+                    autosave(history)
+                } catch (e: Exception) {
+                    messageChannel.trySend(e.message ?: "Couldn't reload the file")
+                }
+            }
+        }
+    }
+
+    /** "Keep mine": saves these edits over the other changes. */
+    fun keepMine() {
+        viewModelScope.launch {
+            stamp = currentStamp()
+            conflict = false
+            pendingUpload = remotePath != null
+            saveStatus = SaveStatus.Saving
+            save()
+        }
     }
 
     /** Saves a moment after typing stops. */
@@ -123,6 +171,7 @@ class TextEditorViewModel(app: Application, path: String, private val remotePath
     private suspend fun save() {
         val history = (state as? State.Ready)?.history ?: return
         saveLock.withLock {
+            if (conflict) return
             val text = history.value.text
             if (text == savedText && !pendingUpload) {
                 if (saveStatus !is SaveStatus.Failed) saveStatus = SaveStatus.Saved
@@ -130,10 +179,18 @@ class TextEditorViewModel(app: Application, path: String, private val remotePath
             }
             saveStatus = SaveStatus.Saving
             try {
+                // Changed elsewhere since we last looked: don't overwrite it without asking.
+                val now = currentStamp()
+                if (stamp != null && now != null && now != stamp) {
+                    conflict = true
+                    saveStatus = SaveStatus.Failed(if (remotePath != null) "Changed on the server" else "Changed by another app")
+                    return
+                }
                 if (text != savedText) {
                     withContext(Dispatchers.IO) { writeTextFile(file, text, crlf, bom) }
                     savedText = text
                     pendingUpload = remotePath != null
+                    if (remotePath == null) stamp = currentStamp()
                 }
                 // A remote file counts as saved only once the server has it.
                 if (pendingUpload && remotePath != null) {
@@ -143,6 +200,7 @@ class TextEditorViewModel(app: Application, path: String, private val remotePath
                         throw IOException("Couldn't upload: ${e.message ?: "connection failed"}", e)
                     }
                     pendingUpload = false
+                    stamp = currentStamp()
                 }
                 saveStatus = if (history.value.text == text) SaveStatus.Saved else SaveStatus.Saving
             } catch (e: Exception) {

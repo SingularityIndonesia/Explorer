@@ -6,6 +6,7 @@ Nothing queued; see the sections below.
 
 ## Done
 
+- [x] Editing files in Android/data (saved back over the phone's own Wireless debugging connection); the text editor pauses saving when the file changed elsewhere (Reload theirs / Keep mine).
 - [x] Remote previews: SSH videos stream with seeking; downloads, uploads and transfers use their own SFTP channel so browsing isn't blocked; edited pictures show their new version.
 - [x] Release build: signing from keystore.properties or EXPLORER_* variables; the classes JSch, libadb and the services load by name checked in the R8 output.
 - [x] CI: GitHub Actions runs the unit tests and builds the debug APK on every push and pull request.
@@ -48,8 +49,6 @@ Nothing queued; see the sections below.
 - Picture editor: pinch to zoom while editing; work on pictures larger than 4096 px at full size.
 - Video editor: keep saving when the editor is left (currently cancels); keep the original container (`.mkv`, `.webm`) instead of always MP4.
 - Document preview: Word headers/footers and page breaks; PowerPoint charts, SmartArt, rotated shapes; the older `.doc`/`.ppt`/`.xls` formats.
-- Text editor: handle a file changed on the server while it's being edited (it's last-write-wins now).
-- Remote files in Android/data are preview-only. Saving back would need a push path through the Wireless debugging connection.
 
 ## Project
 

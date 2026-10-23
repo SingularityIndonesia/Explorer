@@ -109,6 +109,12 @@ class SshFiles(val connections: SshConnections) {
         connections.separateSftp(from.hostId) { sftp -> sftp.get(from.path, target.path) }
     }
 
+    /** Size and modification time of a file, to notice when it changed (or null if it's gone). */
+    suspend fun stamp(path: String): String? {
+        val at = parse(path)
+        return connections.sftp(at.hostId) { sftp, _ -> stat(sftp, at.path)?.let { "${it.size}:${it.mTime}" } }
+    }
+
     /** Saves a local file over [path] on the server (an edited copy going back). */
     suspend fun uploadTo(local: File, path: String) {
         val to = parse(path)

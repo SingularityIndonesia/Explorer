@@ -135,7 +135,7 @@ fun TextPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
                     when {
                         !loaded.utf8 -> vm.message("Only UTF-8 text can be edited")
                         !loaded.editable -> vm.message("Files over ${Formatter.formatShortFileSize(context, MAX_EDIT_BYTES)} can't be edited here")
-                        remote && !vm.repo.canWriteBack(item.path) -> vm.message("Files in Android/data can't be edited here")
+                        remote && !vm.repo.canWriteBack(item.path) -> vm.message("This file can't be changed from here")
                         !remote && !item.file.canWrite() -> vm.message("This file is read-only")
                         // A remote file is edited as its local copy, and each save goes back to the server.
                         local != null -> TextEditorActivity.start(context, local.path, remotePath = if (remote) item.path else null)

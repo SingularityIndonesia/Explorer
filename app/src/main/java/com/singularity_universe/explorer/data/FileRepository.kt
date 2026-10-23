@@ -488,20 +488,35 @@ class FileRepository(private val context: Context) {
         target
     }
 
-    /** Whether edits to a copy of [path] can be saved back there (servers and devices; not Android/data). */
-    fun canWriteBack(path: String): Boolean = isRemote(path)
+    /** Whether edits to a copy of [path] can be saved back there: servers, devices and Android/data. */
+    fun canWriteBack(path: String): Boolean = isRemote(path) || isRestricted(path)
 
     /** Saves an edited local copy over the remote file at [remotePath]. */
     suspend fun writeBack(local: File, remotePath: String): Unit = withContext(Dispatchers.IO) {
         when {
             isSsh(remotePath) -> sshFiles().uploadTo(local, remotePath)
             isAdbDevice(remotePath) -> adbFiles().uploadTo(local, remotePath)
-            else -> throw IOException("Files in Android/data can't be changed from here")
+            // Android/data: through this phone's own Wireless debugging connection.
+            else -> connectedRemote().push(local, remotePath)
         }
     }
 
+    /** Size and modification time of a remote file, to notice changes made elsewhere. */
+    suspend fun remoteStamp(path: String): String? = withContext(Dispatchers.IO) {
+        when {
+            isSsh(path) -> sshFiles().stamp(path)
+            isAdbDevice(path) -> adbFiles().stamp(path)
+            else -> connectedRemote().stamp(path)
+        }
+    }
+
+    /** Downloads the remote file again over its local copy. */
+    suspend fun refreshCopy(remotePath: String, local: File): Unit = withContext(Dispatchers.IO) { downloadTo(remotePath, local) }
+
     /** Uploads [local] as a new file into [remoteDir] (with a free name). Returns the remote path. */
-    suspend fun uploadCopy(local: File, remoteDir: String): String = withContext(Dispatchers.IO) { remoteUpload(local, remoteDir) }
+    suspend fun uploadCopy(local: File, remoteDir: String): String = withContext(Dispatchers.IO) {
+        if (isRestricted(remoteDir)) connectedRemote().pushNew(local, remoteDir) else remoteUpload(local, remoteDir)
+    }
 
     private suspend fun downloadTo(path: String, target: File) = when {
         isSsh(path) -> sshFiles().downloadTo(path, target)

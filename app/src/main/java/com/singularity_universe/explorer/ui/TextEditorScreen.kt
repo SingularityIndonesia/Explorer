@@ -3,6 +3,7 @@ package com.singularity_universe.explorer.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -22,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -48,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.singularity_universe.explorer.ui.TextEditorViewModel.SaveStatus
 import com.singularity_universe.explorer.ui.TextEditorViewModel.State
 
@@ -100,6 +103,7 @@ fun TextEditorScreen(vm: TextEditorViewModel, onBack: () -> Unit) {
                 .consumeWindowInsets(padding)
                 .imePadding(),
         ) {
+            if (vm.conflict) ConflictBanner(onReload = vm::reload, onKeepMine = vm::keepMine, modifier = Modifier.align(Alignment.TopCenter))
             when (val state = vm.state) {
                 State.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 is State.Failed -> Text(
@@ -168,3 +172,22 @@ private fun SaveStatusText(status: SaveStatus, onRetry: () -> Unit) {
         )
     }
 }
+
+/** The file changed elsewhere: take the other version, or save these edits over it. */
+@Composable
+private fun ConflictBanner(onReload: () -> Unit, onKeepMine: () -> Unit, modifier: Modifier) {
+    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium, modifier = modifier.padding(8.dp).zIndex(1f)) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
+            Text(
+                "This file was changed somewhere else since you opened it. Saving is paused.",
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(Modifier.align(Alignment.End)) {
+                TextButton(onClick = onReload) { Text("Reload theirs") }
+                TextButton(onClick = onKeepMine) { Text("Keep mine") }
+            }
+        }
+    }
+}
+

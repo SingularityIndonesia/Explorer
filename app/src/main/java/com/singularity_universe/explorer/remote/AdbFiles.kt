@@ -82,6 +82,12 @@ class AdbFiles(val devices: AdbDevices) {
         devices.pull(from.deviceId, from.path, target)
     }
 
+    /** Size and modification time of a file, to notice when it changed (or null if it's gone). */
+    suspend fun stamp(path: String): String? {
+        val at = parse(path)
+        return devices.exec(at.deviceId, "stat -c '%s:%Y' ${shellQuote(at.path)}").takeIf { it.ok }?.output?.trim()
+    }
+
     /** Saves a local file over [path] on the device (an edited copy going back). */
     suspend fun uploadTo(local: File, path: String) {
         val to = parse(path)

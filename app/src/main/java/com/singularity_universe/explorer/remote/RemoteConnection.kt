@@ -231,6 +231,11 @@ class RemoteConnection private constructor(private val app: Context) {
         openStream("sync:").use { it.syncRecv(path, destination) }
     }
 
+    /** Writes [source] to [path] as the shell user (who can write in Android/data). */
+    suspend fun push(source: File, path: String) = withContext(Dispatchers.IO) {
+        openStream("sync:").use { it.syncSend(source, path) }
+    }
+
     private suspend fun openStream(destination: String) = try {
         val adb = manager?.takeIf { it.isConnected } ?: run {
             if (!paired || !connect()) throw RemoteAccessRequiredException()
