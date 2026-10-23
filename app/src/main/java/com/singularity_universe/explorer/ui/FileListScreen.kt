@@ -131,9 +131,11 @@ fun FileListScreen(
         when {
             selected.isNotEmpty() -> toggle(item)
             item.isDirectory -> vm.navigate(Route.Folder(item.path))
-            // Other apps can't read Android/data or a server, so hand them a copy.
-            vm.repo.needsCopyToOpen(item.path) -> vm.openRestricted(item) { context.openFile(it) }
-            else -> vm.openInApp(item, shown.orEmpty()) { context.openFile(it) }
+            else -> vm.openInApp(item, shown.orEmpty()) { other ->
+                // Other apps can't read Android/data or a server, so hand them a copy.
+                if (vm.repo.needsCopyToOpen(other.path)) vm.openRestricted(other) { context.openFile(it) }
+                else context.openFile(other)
+            }
         }
     }
 

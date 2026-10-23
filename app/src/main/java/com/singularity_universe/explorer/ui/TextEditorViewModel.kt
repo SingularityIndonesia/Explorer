@@ -10,13 +10,19 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.singularity_universe.explorer.data.FileRepository
 import com.singularity_universe.explorer.data.MAX_EDIT_BYTES
 import com.singularity_universe.explorer.data.isJsonFile
 import com.singularity_universe.explorer.data.mimeTypeOf
 import com.singularity_universe.explorer.data.prettifyJson
 import com.singularity_universe.explorer.data.readTextFile
 import com.singularity_universe.explorer.data.writeTextFile
+import com.singularity_universe.explorer.remote.AdbDevices
+import com.singularity_universe.explorer.remote.AdbFiles
+import com.singularity_universe.explorer.remote.SshConnections
+import com.singularity_universe.explorer.remote.SshFiles
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -32,8 +38,19 @@ import kotlinx.coroutines.withContext
 import org.json.JSONException
 
 /** State of [com.singularity_universe.explorer.TextEditorActivity]: the file, its edit history, and autosave. */
-class TextEditorViewModel(app: Application, path: String) : AndroidViewModel(app) {
+class TextEditorViewModel(app: Application, path: String, private val remotePath: String? = null) : AndroidViewModel(app) {
     val file = File(path)
+
+    /** For a copy of a file on a server or device: where each save is uploaded to. */
+    private val repo by lazy {
+        FileRepository(app).apply {
+            ssh = SshFiles(SshConnections.get(app))
+            adb = AdbFiles(AdbDevices.get(app))
+        }
+    }
+
+    /** The local copy has changes the server doesn't have yet. */
+    private var pendingUpload = false
     val isJson = isJsonFile(file.name, mimeTypeOf(file.name))
 
     sealed interface State {
@@ -107,14 +124,26 @@ class TextEditorViewModel(app: Application, path: String) : AndroidViewModel(app
         val history = (state as? State.Ready)?.history ?: return
         saveLock.withLock {
             val text = history.value.text
-            if (text == savedText) {
+            if (text == savedText && !pendingUpload) {
                 if (saveStatus !is SaveStatus.Failed) saveStatus = SaveStatus.Saved
                 return
             }
             saveStatus = SaveStatus.Saving
             try {
-                withContext(Dispatchers.IO) { writeTextFile(file, text, crlf, bom) }
-                savedText = text
+                if (text != savedText) {
+                    withContext(Dispatchers.IO) { writeTextFile(file, text, crlf, bom) }
+                    savedText = text
+                    pendingUpload = remotePath != null
+                }
+                // A remote file counts as saved only once the server has it.
+                if (pendingUpload && remotePath != null) {
+                    try {
+                        repo.writeBack(file, remotePath)
+                    } catch (e: Exception) {
+                        throw IOException("Couldn't upload: ${e.message ?: "connection failed"}", e)
+                    }
+                    pendingUpload = false
+                }
                 saveStatus = if (history.value.text == text) SaveStatus.Saved else SaveStatus.Saving
             } catch (e: Exception) {
                 Log.w("Explorer", "Saving ${file.path} failed", e)
@@ -128,7 +157,7 @@ class TextEditorViewModel(app: Application, path: String) : AndroidViewModel(app
      * finishes when the editor closes; a failure is shown as a toast since the screen may be gone.
      */
     fun saveNow() {
-        if ((state as? State.Ready)?.history?.value?.text == savedText) return
+        if ((state as? State.Ready)?.history?.value?.text == savedText && !pendingUpload) return
         leftoverSaves.launch {
             save()
             (saveStatus as? SaveStatus.Failed)?.let {

@@ -71,15 +71,20 @@ fun TextPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
     var content by remember { mutableStateOf<TextContent?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    // A file on a server or device is downloaded once; the editor then works on that copy.
+    val copy = rememberLocalCopy(vm, item)
+    val local = (copy as? LocalCopy.Ready)?.file
+    val remote = vm.repo.needsCopyToOpen(item.path)
+
     // Reads the file each time the screen is shown, so edits made in the editor appear on return.
     var loads by remember { mutableIntStateOf(0) }
     LifecycleResumeEffect(Unit) {
         loads++
         onPauseOrDispose { }
     }
-    LaunchedEffect(loads) {
-        if (loads == 0) return@LaunchedEffect
-        withContext(Dispatchers.IO) { runCatching { readTextFile(item.file) } }
+    LaunchedEffect(loads, local) {
+        if (loads == 0 || local == null) return@LaunchedEffect
+        withContext(Dispatchers.IO) { runCatching { readTextFile(local) } }
             .onSuccess { loaded ->
                 val previous = content
                 if (previous != null && previous.lastModified != loaded.lastModified) vm.fileChanged()
@@ -115,7 +120,9 @@ fun TextPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
                         item("Move to…", Icons.AutoMirrored.Outlined.DriveFileMove) {
                             vm.startTransfer(listOf(item.path), move = true)
                         }
-                        item("Open with", Icons.AutoMirrored.Outlined.OpenInNew) { context.openFile(item) }
+                        item("Open with", Icons.AutoMirrored.Outlined.OpenInNew) {
+                            if (remote) vm.openRestricted(item) { context.openFile(it) } else context.openFile(item)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -128,8 +135,10 @@ fun TextPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
                     when {
                         !loaded.utf8 -> vm.message("Only UTF-8 text can be edited")
                         !loaded.editable -> vm.message("Files over ${Formatter.formatShortFileSize(context, MAX_EDIT_BYTES)} can't be edited here")
-                        !item.file.canWrite() -> vm.message("This file is read-only")
-                        else -> TextEditorActivity.start(context, item.path)
+                        remote && !vm.repo.canWriteBack(item.path) -> vm.message("Files in Android/data can't be edited here")
+                        !remote && !item.file.canWrite() -> vm.message("This file is read-only")
+                        // A remote file is edited as its local copy, and each save goes back to the server.
+                        local != null -> TextEditorActivity.start(context, local.path, remotePath = if (remote) item.path else null)
                     }
                 },
                 icon = { Icon(Icons.Outlined.Edit, null) },
@@ -142,6 +151,7 @@ fun TextPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
             val loaded = content
             when {
                 loaded != null -> TextLines(loaded)
+                copy !is LocalCopy.Ready -> Box(Modifier.align(Alignment.Center)) { LocalCopyStatus(copy, item) }
                 error != null -> CenteredMessage(error!!)
                 else -> CircularProgressIndicator(Modifier.align(Alignment.Center))
             }

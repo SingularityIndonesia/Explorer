@@ -18,9 +18,15 @@ import com.singularity_universe.explorer.remote.RemoteFiles
 import com.singularity_universe.explorer.remote.SshFiles
 import com.singularity_universe.explorer.remote.SshPath
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
+import kotlin.math.abs
 
 class FileRepository(private val context: Context) {
 
@@ -348,6 +354,82 @@ class FileRepository(private val context: Context) {
         if (onDevices.isNotEmpty()) adbFiles().delete(onDevices)
     }
 
+    // ---- Local copies of remote files (previews and editors) ----
+
+    /**
+     * A local copy of a file on a server, another device or in Android/data, for the in-app
+     * viewers and editors. Downloaded once and reused while the remote file keeps the same size and
+     * date. [onProgress] gets 0..1 while downloading (from a background thread).
+     */
+    suspend fun cachedCopy(item: FileItem, onProgress: (Float) -> Unit = {}): File = withContext(Dispatchers.IO) {
+        val dir = File(remoteCacheDir(), sha1(item.path))
+        val target = File(dir, item.name)
+        val upToDate = target.exists() && target.length() == item.size &&
+            (item.lastModified <= 0 || abs(target.lastModified() - item.lastModified) < 2_000)
+        if (upToDate) return@withContext target
+        dir.mkdirs()
+        // Downloaded beside the target and renamed at the end: a broken download is never reused.
+        val partial = File(dir, ".${item.name}.part")
+        partial.delete()
+        coroutineScope {
+            val progress = launch {
+                while (isActive) {
+                    if (item.size > 0) onProgress((partial.length().toFloat() / item.size).coerceIn(0f, 1f))
+                    delay(150)
+                }
+            }
+            try {
+                downloadTo(item.path, partial)
+            } finally {
+                progress.cancel()
+            }
+        }
+        target.delete()
+        if (!partial.renameTo(target)) throw IOException("Couldn't store the downloaded file")
+        if (item.lastModified > 0) target.setLastModified(item.lastModified)
+        onProgress(1f)
+        trimRemoteCache(keep = dir)
+        target
+    }
+
+    /** Whether edits to a copy of [path] can be saved back there (servers and devices; not Android/data). */
+    fun canWriteBack(path: String): Boolean = isRemote(path)
+
+    /** Saves an edited local copy over the remote file at [remotePath]. */
+    suspend fun writeBack(local: File, remotePath: String): Unit = withContext(Dispatchers.IO) {
+        when {
+            isSsh(remotePath) -> sshFiles().uploadTo(local, remotePath)
+            isAdbDevice(remotePath) -> adbFiles().uploadTo(local, remotePath)
+            else -> throw IOException("Files in Android/data can't be changed from here")
+        }
+    }
+
+    /** Uploads [local] as a new file into [remoteDir] (with a free name). Returns the remote path. */
+    suspend fun uploadCopy(local: File, remoteDir: String): String = withContext(Dispatchers.IO) { remoteUpload(local, remoteDir) }
+
+    private suspend fun downloadTo(path: String, target: File) = when {
+        isSsh(path) -> sshFiles().downloadTo(path, target)
+        isAdbDevice(path) -> adbFiles().downloadTo(path, target)
+        else -> connectedRemote().pull(path, target)
+    }
+
+    private fun remoteCacheDir() = File(context.cacheDir, "remote-files")
+
+    /** Keeps the cache of remote copies under [MAX_REMOTE_CACHE] by dropping the least recently used. */
+    private fun trimRemoteCache(keep: File) {
+        val entries = remoteCacheDir().listFiles()?.filter { it != keep } ?: return
+        var total = entries.sumOf { dir -> dir.walkTopDown().filter { it.isFile }.sumOf { it.length() } } +
+            keep.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        for (dir in entries.sortedBy { it.lastModified() }) {
+            if (total <= MAX_REMOTE_CACHE) break
+            total -= dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            dir.deleteRecursively()
+        }
+    }
+
+    private fun sha1(text: String): String =
+        MessageDigest.getInstance("SHA-1").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }.take(20)
+
     /** Copies a file from Android/data or a server into app storage so it can be opened. */
     suspend fun copyForOpening(item: FileItem, cacheDir: File): File = withContext(Dispatchers.IO) {
         val target = File(cacheDir, "remote/${item.name}")
@@ -424,5 +506,10 @@ class FileRepository(private val context: Context) {
                 }
             }
         result
+    }
+
+    private companion object {
+        /** Remote copies kept for previews; Android may also clear them when space runs low. */
+        const val MAX_REMOTE_CACHE = 500L * 1024 * 1024
     }
 }

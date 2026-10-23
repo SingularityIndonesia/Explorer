@@ -111,12 +111,14 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Opens a local file in the app: images and videos in the viewer (swiping through the other
+     * Opens a file in the app: images and videos in the viewer (swiping through the other
      * previewable files in [siblings]), documents (PDF, Word, PowerPoint, Excel) in the document
-     * preview, and text in the text viewer. Files of unknown type are
-     * checked for text first. Anything else goes to [otherwise], usually another app.
+     * preview, and text in the text viewer. Files on servers, other devices or in Android/data
+     * are downloaded by those screens. Files of unknown type are checked for text first.
+     * Anything else goes to [otherwise], usually another app.
      */
     fun openInApp(item: FileItem, siblings: List<FileItem>, otherwise: (FileItem) -> Unit) {
+        val remote = repo.needsCopyToOpen(item.path)
         when {
             item.isPreviewable -> {
                 val media = siblings.filter { it.isPreviewable }.ifEmpty { listOf(item) }
@@ -124,9 +126,18 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
             }
             documentKindOf(item.name) != null -> navigate(Route.DocumentPreview(item))
             item.isText -> navigate(Route.TextPreview(item))
-            item.mimeType == "application/octet-stream" -> viewModelScope.launch {
-                if (withContext(Dispatchers.IO) { looksLikeText(item.file) }) navigate(Route.TextPreview(item))
-                else otherwise(item)
+            // Unknown type: look at the start of the file (remote ones only when small enough to fetch first).
+            item.mimeType == "application/octet-stream" && (!remote || item.size <= SNIFF_REMOTE_MAX) -> viewModelScope.launch {
+                busy = true
+                try {
+                    val local = if (remote) repo.cachedCopy(item) else item.file
+                    if (withContext(Dispatchers.IO) { looksLikeText(local) }) navigate(Route.TextPreview(item))
+                    else otherwise(item)
+                } catch (e: Exception) {
+                    message(e.message ?: "Couldn't open this file")
+                } finally {
+                    busy = false
+                }
             }
             else -> otherwise(item)
         }
@@ -134,6 +145,18 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** A file was changed outside the file lists (e.g. in the text editor): their sizes and dates are outdated. */
     fun fileChanged() = invalidateAll()
+
+    /**
+     * An editor saved [saved], made from a local copy of the remote file [original]: replacing it
+     * when [saved] is that copy itself, otherwise uploading it as a new file beside it.
+     */
+    fun saveEditToRemote(saved: File, original: FileItem, copy: File) {
+        val replace = saved.canonicalPath == copy.canonicalPath
+        val folder = parentOf(original.path)
+        runOperation(if (replace) "Saved to ${displayName(folder)}" else "Saved ${saved.name} to ${displayName(folder)}") {
+            if (replace) repo.writeBack(saved, original.path) else repo.uploadCopy(saved, folder)
+        }
+    }
 
     // ---- Remote access ----
 
@@ -436,6 +459,9 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        /** Remote files of unknown type are downloaded to check for text only up to this size. */
+        private const val SNIFF_REMOTE_MAX = 2L * 1024 * 1024
+
         private const val KEY_STARRED = "starred"
         private const val KEY_HIDDEN = "show_hidden"
         private const val KEY_SORT = "sort"

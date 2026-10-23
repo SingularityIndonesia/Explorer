@@ -82,6 +82,12 @@ class AdbFiles(val devices: AdbDevices) {
         devices.pull(from.deviceId, from.path, target)
     }
 
+    /** Saves a local file over [path] on the device (an edited copy going back). */
+    suspend fun uploadTo(local: File, path: String) {
+        val to = parse(path)
+        devices.push(to.deviceId, local, to.path)
+    }
+
     /** Uploads a local file or folder into [destDir] on the device. Returns the remote path. */
     suspend fun upload(local: File, destDir: String): String {
         val target = uniqueTarget(parse(destDir), local.name)

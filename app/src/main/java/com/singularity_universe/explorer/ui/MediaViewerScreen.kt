@@ -9,6 +9,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -44,6 +45,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -56,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -83,6 +86,7 @@ import com.singularity_universe.explorer.VideoEditorActivity
 import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.FileKind
 import com.singularity_universe.explorer.data.thumbnail
+import java.io.File
 import kotlinx.coroutines.delay
 
 /** Full-screen viewer: swipe left/right through [items]; images are shown, videos play. */
@@ -98,9 +102,20 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
     // One zoom per page; while the current page is zoomed, drags pan it instead of swiping pages.
     val zoomStates = remember { mutableStateMapOf<Int, ZoomState>() }
     val currentZoomed = zoomStates[pagerState.currentPage]?.isZoomed == true
-    // A saved edit is a new or changed file: folder lists and Recents must show it.
+    // Downloaded copies of remote pages, by remote path (for Edit).
+    val copies = remember { mutableStateMapOf<String, File>() }
+    // Editing a remote file: [remote path, local copy], kept across activity recreation.
+    var editingRemote by rememberSaveable { mutableStateOf<List<String>?>(null) }
+    // A saved edit is a new or changed file: folder lists and Recents must show it; a remote file's
+    // edit goes back to its server or device.
     val editor = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) vm.fileChanged()
+        val remote = editingRemote
+        editingRemote = null
+        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        val saved = result.data?.getStringExtra(ImageEditorActivity.EXTRA_SAVED)
+        val original = remote?.let { (path, _) -> items.firstOrNull { it.path == path } }
+        if (remote != null && original != null && saved != null) vm.saveEditToRemote(File(saved), original, File(remote[1]))
+        else vm.fileChanged()
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -117,18 +132,35 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
             LaunchedEffect(pagerState.settledPage) {
                 if (pagerState.settledPage != page) zoom.reset()
             }
-            if (item.kind == FileKind.Video) {
-                VideoPage(
-                    item = item,
-                    zoom = zoom,
-                    isCurrent = pagerState.settledPage == page,
-                    controlsVisible = chromeVisible,
-                    holdControls = menuOpen,
-                    onToggleControls = { chromeVisible = !chromeVisible },
-                    onHideControls = { chromeVisible = false },
-                )
-            } else {
-                ImagePage(item, zoom, onTap = { chromeVisible = !chromeVisible })
+            // Files on a server or device are downloaded first: pictures as they come near, videos
+            // (which can be large) only once their page is the current one.
+            val isCurrent = pagerState.settledPage == page
+            val load = item.kind != FileKind.Video || isCurrent
+            when (val copy = rememberLocalCopy(vm, item, enabled = load)) {
+                is LocalCopy.Ready -> {
+                    val shown = if (copy.file.path == item.path) item else item.copy(path = copy.file.path, mediaUri = null)
+                    if (shown !== item) SideEffect { copies[item.path] = copy.file }
+                    if (item.kind == FileKind.Video) {
+                        VideoPage(
+                            item = shown,
+                            zoom = zoom,
+                            isCurrent = isCurrent,
+                            controlsVisible = chromeVisible,
+                            holdControls = menuOpen,
+                            onToggleControls = { chromeVisible = !chromeVisible },
+                            onHideControls = { chromeVisible = false },
+                        )
+                    } else {
+                        ImagePage(shown, zoom, onTap = { chromeVisible = !chromeVisible })
+                    }
+                }
+                else -> Box(
+                    Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { chromeVisible = !chromeVisible } },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (load) LocalCopyStatus(copy, item, color = Color.White)
+                    else Icon(Icons.Outlined.PlayCircle, null, Modifier.size(72.dp), tint = Color.White)
+                }
             }
         }
 
@@ -156,13 +188,23 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                     IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        editor.launch(
-                            if (current.kind == FileKind.Video) VideoEditorActivity.intent(context, current.path)
-                            else ImageEditorActivity.intent(context, current.path)
-                        )
-                    }) {
-                        Icon(Icons.Outlined.Edit, "Edit")
+                    // Remote files are edited as their downloaded copy, then saved back (not in Android/data).
+                    val remote = vm.repo.needsCopyToOpen(current.path)
+                    val copy = copies[current.path]
+                    if (!remote || vm.repo.canWriteBack(current.path)) {
+                        IconButton(
+                            onClick = {
+                                val path = if (remote) copy?.path ?: return@IconButton else current.path
+                                if (remote) editingRemote = listOf(current.path, path)
+                                editor.launch(
+                                    if (current.kind == FileKind.Video) VideoEditorActivity.intent(context, path)
+                                    else ImageEditorActivity.intent(context, path)
+                                )
+                            },
+                            enabled = !remote || copy != null,
+                        ) {
+                            Icon(Icons.Outlined.Edit, "Edit")
+                        }
                     }
                     OverflowMenu(onExpandedChange = { menuOpen = it }) {
                         item("Locate", Icons.Outlined.FolderOpen) { vm.locate(current) }

@@ -21,7 +21,7 @@ class TextEditorActivity : ComponentActivity() {
     private val path: String? get() = intent.getStringExtra(EXTRA_PATH)
 
     private val vm: TextEditorViewModel by viewModels {
-        viewModelFactory { initializer { TextEditorViewModel(application, path!!) } }
+        viewModelFactory { initializer { TextEditorViewModel(application, path!!, intent.getStringExtra(EXTRA_REMOTE)) } }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,10 +43,14 @@ class TextEditorActivity : ComponentActivity() {
 
     companion object {
         private const val EXTRA_PATH = "path"
+        private const val EXTRA_REMOTE = "remote_path"
 
-        fun start(context: Context, path: String) {
+        /** Edits [path]; for a copy of a remote file, [remotePath] is where each save is uploaded. */
+        fun start(context: Context, path: String, remotePath: String? = null) {
             context.startActivity(
-                Intent(context, TextEditorActivity::class.java).putExtra(EXTRA_PATH, path)
+                Intent(context, TextEditorActivity::class.java)
+                    .putExtra(EXTRA_PATH, path)
+                    .apply { if (remotePath != null) putExtra(EXTRA_REMOTE, remotePath) }
             )
         }
     }

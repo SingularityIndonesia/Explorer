@@ -192,8 +192,13 @@ private fun load(file: File, kind: DocumentKind): Loaded = when (kind) {
 fun DocumentPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
     val context = LocalContext.current
     val kind = documentKindOf(item.name)
-    val result by produceState<Result<Loaded>?>(null, item.path) {
-        value = withContext(Dispatchers.IO) { runCatching { load(item.file, kind!!) } }
+    // Documents on a server or device are downloaded first.
+    val copy = rememberLocalCopy(vm, item)
+    val local = (copy as? LocalCopy.Ready)?.file
+    val remote = vm.repo.needsCopyToOpen(item.path)
+    val result by produceState<Result<Loaded>?>(null, local) {
+        if (local == null) return@produceState
+        value = withContext(Dispatchers.IO) { runCatching { load(local, kind!!) } }
     }
     val loaded = result?.getOrNull()
     DisposableEffect(loaded) { onDispose { loaded?.let { runCatching { it.close() } } } }
@@ -215,7 +220,9 @@ fun DocumentPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
                 },
                 actions = {
                     OverflowMenu {
-                        item("Open with", Icons.AutoMirrored.Outlined.OpenInNew) { context.openFile(item) }
+                        item("Open with", Icons.AutoMirrored.Outlined.OpenInNew) {
+                            if (remote) vm.openRestricted(item) { context.openFile(it) } else context.openFile(item)
+                        }
                         item("Locate", Icons.Outlined.FolderOpen) { vm.locate(item) }
                         item("Copy to…", Icons.Outlined.ContentCopy) { vm.startTransfer(listOf(item.path), move = false) }
                         item("Move to…", Icons.AutoMirrored.Outlined.DriveFileMove) { vm.startTransfer(listOf(item.path), move = true) }
@@ -228,6 +235,7 @@ fun DocumentPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
             val failure = result?.exceptionOrNull()
             when {
+                copy !is LocalCopy.Ready -> LocalCopyStatus(copy, item)
                 result == null -> CircularProgressIndicator()
                 failure != null -> Text(
                     if (failure is SecurityException) "This PDF is password-protected. Use Open with to view it in another app."
