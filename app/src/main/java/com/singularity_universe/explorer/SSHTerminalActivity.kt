@@ -32,7 +32,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.singularity_universe.explorer.remote.Endpoint
 import com.singularity_universe.explorer.remote.SshConnections
+import com.singularity_universe.explorer.remote.SshHost
 import com.singularity_universe.explorer.remote.SshTerminal
 import com.singularity_universe.explorer.remote.TerminalSessions
 import com.singularity_universe.explorer.ui.SshTerminalScreen
@@ -67,6 +69,17 @@ class SSHTerminalActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Launched from an ssh://user@host link (browser, QR, shortcut, another app): find the
+        // matching saved server and continue as if that server's terminal was opened.
+        if (intent.action == Intent.ACTION_VIEW && intent.getStringExtra(EXTRA_HOST_ID) == null) {
+            val resolved = resolveSshUri(intent.data)
+            if (resolved == null) {
+                Toast.makeText(this, sshUriError(intent.data), Toast.LENGTH_LONG).show()
+                return finish()
+            }
+            intent.putExtra(EXTRA_HOST_ID, resolved.hostId)
+            resolved.directory?.let { intent.putExtra(EXTRA_DIRECTORY, it) }
+        }
         val id = hostId ?: return finish()
         // The terminal is always dark: light status and navigation bar icons.
         enableEdgeToEdge(
@@ -144,10 +157,69 @@ class SSHTerminalActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val directory = intent.getStringExtra(EXTRA_DIRECTORY) ?: return
+        val directory = intent.getStringExtra(EXTRA_DIRECTORY)
+            ?: intent.takeIf { it.action == Intent.ACTION_VIEW }?.let { resolveSshUri(it.data)?.directory }
+            ?: return
         if (!vm.terminal.openDirectory(directory)) {
             Toast.makeText(this, "Close the running program first, then try again", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private data class ResolvedServer(val hostId: String, val directory: String?)
+
+    /**
+     * Turns an `ssh://[user[:password]@]host[:port][/dir]` link into a server to open:
+     *  - with a username and password, it connects ad-hoc to that host (nothing is saved);
+     *  - otherwise it matches a saved server by host (and username/port when the link names them).
+     * Returns null when neither is possible.
+     */
+    private fun resolveSshUri(uri: Uri?): ResolvedServer? {
+        if (uri == null || !uri.scheme.equals("ssh", ignoreCase = true)) return null
+        val host = uri.host?.takeIf { it.isNotBlank() } ?: return null
+        // userInfo is "user" or "user:password" (percent-encoded).
+        val userInfo = uri.userInfo
+        val user = userInfo?.substringBefore(':')?.let(Uri::decode)?.takeIf { it.isNotBlank() }
+        val password = userInfo?.substringAfter(':', "")?.let(Uri::decode)?.takeIf { it.isNotEmpty() }
+        val port = uri.port.takeIf { it > 0 }
+        val directory = uri.path?.takeIf { it.isNotBlank() && it != "/" }
+        val ssh = SshConnections.get(this)
+
+        // Full credentials in the link: connect ad-hoc without saving the server.
+        if (user != null && password != null) {
+            val adHoc = ssh.addTransient(
+                SshHost(
+                    id = "",
+                    name = host,
+                    hosts = listOf(if (port != null) "$host:$port" else host),
+                    port = port ?: 22,
+                    username = user,
+                    password = password,
+                )
+            )
+            return ResolvedServer(adHoc.id, directory)
+        }
+
+        // Otherwise match a saved server (prefer one that also matches the given port).
+        val candidates = ssh.hosts.filter { server ->
+            server.hosts.any { Endpoint.parse(it)?.host.equals(host, ignoreCase = true) == true } &&
+                (user == null || server.username.equals(user, ignoreCase = true))
+        }
+        val match = port?.let { p -> candidates.firstOrNull { it.connectPort == p } }
+            ?: candidates.firstOrNull()
+            ?: return null
+        return ResolvedServer(match.id, directory)
+    }
+
+    private fun sshUriError(uri: Uri?): String {
+        val host = uri?.host
+        return if (host.isNullOrBlank()) "That isn't a valid ssh:// address"
+        else "No saved server matches $host. Open ssh://user:password@$host, or add it in Explorer."
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // An ad-hoc (ssh:// link) server only lives as long as its terminal window.
+        if (isFinishing) hostId?.takeIf { it.startsWith("transient-") }?.let { SshConnections.get(this).removeTransient(it) }
     }
 
     override fun onResume() {

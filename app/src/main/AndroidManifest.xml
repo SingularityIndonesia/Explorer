@@ -72,14 +72,23 @@
              keeps the screen and the session through rotation, resizing and keyboards. -->
         <activity
                 android:name=".SSHTerminalActivity"
-                android:exported="false"
+                android:exported="true"
                 android:label="Terminal"
                 android:taskAffinity="com.singularity_universe.explorer.terminal"
                 android:documentLaunchMode="intoExisting"
                 android:resizeableActivity="true"
                 android:windowSoftInputMode="adjustResize|stateAlwaysVisible"
                 android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
-                android:theme="@style/Theme.Explorer"/>
+                android:theme="@style/Theme.Explorer">
+            <!-- Open an SSH terminal from an ssh://user@host:port link (browser, QR code, launcher
+                 shortcut, another app, or `am start`). It opens the matching saved server. -->
+            <intent-filter android:label="SSH terminal">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="ssh"/>
+            </intent-filter>
+        </activity>
 
         <activity
                 android:name=".ImageEditorActivity"

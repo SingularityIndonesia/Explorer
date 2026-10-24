@@ -50,6 +50,12 @@ class SshConnections private constructor(private val app: Context) {
     private val live = HashMap<String, Live>()
     private val locks = HashMap<String, Mutex>()
 
+    /**
+     * Ad-hoc servers from an `ssh://user:password@host` link: usable like a saved server (so the
+     * terminal can connect) but not persisted and kept out of the saved-server UI lists.
+     */
+    private val transient = HashMap<String, SshHost>()
+
     /** Saved servers, observable by Compose. */
     val hosts = mutableStateListOf<SshHost>().apply { addAll(store.load()) }
 
@@ -108,7 +114,22 @@ class SshConnections private constructor(private val app: Context) {
         }
     }
 
-    fun host(id: String): SshHost? = hosts.firstOrNull { it.id == id }
+    fun host(id: String): SshHost? =
+        hosts.firstOrNull { it.id == id } ?: synchronized(transient) { transient[id] }
+
+    /** Registers an ad-hoc server (from an ssh:// link) and returns it with its generated id. */
+    fun addTransient(host: SshHost): SshHost {
+        val saved = host.copy(id = "transient-${UUID.randomUUID()}")
+        synchronized(transient) { transient[saved.id] = saved }
+        return saved
+    }
+
+    /** Drops an ad-hoc server and closes its connection. */
+    fun removeTransient(id: String) {
+        synchronized(transient) { transient.remove(id) } ?: return
+        disconnect(id)
+        status.remove(id)
+    }
 
     // ---- Saved servers ----
 
