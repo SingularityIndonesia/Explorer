@@ -2,6 +2,8 @@ package com.singularity_universe.explorer.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
@@ -61,15 +64,25 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -103,6 +116,12 @@ fun FileListScreen(
     topBar: (@Composable () -> Unit)? = null,
     /** Extra buttons at the start of the top bar's actions (e.g. a server folder's terminal). */
     actions: @Composable () -> Unit = {},
+    /**
+     * Shows a menu button that opens the navigation drawer, alongside the usual back arrow — so
+     * jumping to another folder/server/device doesn't require backing all the way out first. Back
+     * navigation itself is unchanged.
+     */
+    onOpenDrawer: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var selected by remember { mutableStateOf(emptySet<String>()) }
@@ -194,6 +213,9 @@ fun FileListScreen(
                     },
                     actions = {
                         actions()
+                        if (onOpenDrawer != null) {
+                            IconButton(onClick = onOpenDrawer) { Icon(Icons.Default.Menu, "Open menu") }
+                        }
                         IconButton(onClick = { vm.navigate(Route.Search) }) { Icon(Icons.Default.Search, "Search") }
                         IconButton(onClick = { vm.updateGridView(!vm.gridView) }) {
                             Icon(
@@ -245,6 +267,9 @@ fun FileListScreen(
                 sectionOf = sectionOf,
                 onClick = ::open,
                 onLongClick = ::toggle,
+                // Long-press an item, then (without lifting) drag across others to select them
+                // all — this only ever adds to the selection, it never deselects by sweeping.
+                onSweepSelect = { item -> if (item.path !in selected) toggle(item) },
             )
             if (vm.busy) CircularProgressIndicator(Modifier.align(Alignment.Center))
         }
@@ -304,6 +329,8 @@ private fun FileCollection(
     sectionOf: ((FileItem) -> String)?,
     onClick: (FileItem) -> Unit,
     onLongClick: (FileItem) -> Unit,
+    /** Long-press an item, then drag over others to select every one the finger passes over. */
+    onSweepSelect: (FileItem) -> Unit,
 ) {
     val contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 96.dp)
     val listState = rememberLazyListState()
@@ -321,44 +348,104 @@ private fun FileCollection(
         flashing = null
     }
 
-    if (grid) {
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(120.dp),
-            state = gridState,
-            contentPadding = contentPadding,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            item(span = { GridItemSpan(maxLineSpan) }) { header() }
-            if (loading) item(span = { GridItemSpan(maxLineSpan) }) { Loading() }
-            else if (items.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Empty(emptyText) }
-            sections.forEach { (label, group) ->
-                if (label != null) {
-                    item(key = "section:$label", span = { GridItemSpan(maxLineSpan) }) { SectionHeader(label) }
+    // Drag-to-select: a long-press on an item (below) arms sweeping; while the same finger stays
+    // down and moves, every currently-visible item it passes over (by screen position, tracked in
+    // window coordinates so it's independent of scrolling/placement) gets added to the selection.
+    var containerCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val itemBounds = remember { mutableStateMapOf<String, Rect>() }
+    var sweeping by remember { mutableStateOf(false) }
+    val swept = remember { mutableStateMapOf<String, Unit>() }
+
+    fun beginSweep(item: FileItem) {
+        sweeping = true
+        swept.clear()
+        swept[item.path] = Unit
+    }
+
+    fun sweepHit(windowPosition: Offset) {
+        val path = itemBounds.entries.firstOrNull { it.value.contains(windowPosition) }?.key ?: return
+        if (swept.put(path, Unit) == null) {
+            items.firstOrNull { it.path == path }?.let(onSweepSelect)
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { containerCoords = it }
+            .pointerInput(items, grid) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val change = event.changes.firstOrNull() ?: break
+                        if (sweeping) {
+                            containerCoords?.let { sweepHit(it.localToWindow(change.position)) }
+                            // Claim the drag so the list doesn't also scroll while sweep-selecting.
+                            change.consume()
+                        }
+                    } while (event.changes.any { it.pressed })
+                    sweeping = false
+                    swept.clear()
                 }
-                items(group, key = { it.path }) { item ->
-                    FileGridCell(
-                        item, item.path in selected, item.path in starred, { onClick(item) }, { onLongClick(item) },
-                        highlighted = item.path == flashing,
-                    )
+            },
+    ) {
+        if (grid) {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(120.dp),
+                state = gridState,
+                contentPadding = contentPadding,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                item(span = { GridItemSpan(maxLineSpan) }) { header() }
+                if (loading) item(span = { GridItemSpan(maxLineSpan) }) { Loading() }
+                else if (items.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Empty(emptyText) }
+                sections.forEach { (label, group) ->
+                    if (label != null) {
+                        item(key = "section:$label", span = { GridItemSpan(maxLineSpan) }) { SectionHeader(label) }
+                    }
+                    items(group, key = { it.path }) { item ->
+                        TrackedBounds(item.path, itemBounds) {
+                            FileGridCell(
+                                item, item.path in selected, item.path in starred, { onClick(item) },
+                                { onLongClick(item); beginSweep(item) },
+                                highlighted = item.path == flashing,
+                            )
+                        }
+                    }
                 }
             }
-        }
-    } else {
-        LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
-            item { header() }
-            if (loading) item { Loading() }
-            else if (items.isEmpty()) item { Empty(emptyText) }
-            sections.forEach { (label, group) ->
-                if (label != null) item(key = "section:$label") { SectionHeader(label) }
-                items(group, key = { it.path }) { item ->
-                    FileRow(
-                        item, item.path in selected, item.path in starred, { onClick(item) }, { onLongClick(item) },
-                        highlighted = item.path == flashing,
-                    )
+        } else {
+            LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
+                item { header() }
+                if (loading) item { Loading() }
+                else if (items.isEmpty()) item { Empty(emptyText) }
+                sections.forEach { (label, group) ->
+                    if (label != null) item(key = "section:$label") { SectionHeader(label) }
+                    items(group, key = { it.path }) { item ->
+                        TrackedBounds(item.path, itemBounds) {
+                            FileRow(
+                                item, item.path in selected, item.path in starred, { onClick(item) },
+                                { onLongClick(item); beginSweep(item) },
+                                highlighted = item.path == flashing,
+                            )
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+/** Reports [path]'s on-screen bounds into [bounds] (window coordinates) while this is composed. */
+@Composable
+private fun TrackedBounds(path: String, bounds: SnapshotStateMap<String, Rect>, content: @Composable () -> Unit) {
+    Box(
+        Modifier.onGloballyPositioned { bounds[path] = it.boundsInWindow() },
+    ) {
+        content()
+    }
+    DisposableEffect(path) { onDispose { bounds.remove(path) } }
 }
 
 private fun sectionsOf(items: List<FileItem>, sectionOf: ((FileItem) -> String)?): List<Pair<String?, List<FileItem>>> {

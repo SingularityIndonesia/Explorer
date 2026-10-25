@@ -293,8 +293,8 @@ private fun ExplorerRoot(vm: ExplorerViewModel) {
 private fun Screen(vm: ExplorerViewModel, route: Route, onOpenDrawer: () -> Unit) {
                 when (route) {
                     Route.Home -> HomeScreen(vm, onOpenDrawer)
-                    Route.Recents -> RecentsScreen(vm)
-                    Route.Starred -> StarredScreen(vm)
+                    Route.Recents -> RecentsScreen(vm, onOpenDrawer)
+                    Route.Starred -> StarredScreen(vm, onOpenDrawer)
                     Route.Search -> SearchScreen(vm)
                     Route.OtherStorage -> OtherStorageScreen(vm)
                     Route.About -> AboutScreen(vm)
@@ -302,8 +302,8 @@ private fun Screen(vm: ExplorerViewModel, route: Route, onOpenDrawer: () -> Unit
                     Route.Settings -> SettingsScreen(vm)
                     Route.Trash -> TrashScreen(vm)
                     Route.Clean -> CleanScreen(vm)
-                    is Route.Folder -> FolderScreen(vm, route.path, route.highlight)
-                    is Route.CategoryFiles -> CategoryScreen(vm, route.category)
+                    is Route.Folder -> FolderScreen(vm, route.path, route.highlight, onOpenDrawer)
+                    is Route.CategoryFiles -> CategoryScreen(vm, route.category, onOpenDrawer)
                     is Route.Viewer -> MediaViewerScreen(vm, route.items, route.index)
                     is Route.TextPreview -> TextPreviewScreen(vm, route.item)
                     is Route.DocumentPreview -> DocumentPreviewScreen(vm, route.item)

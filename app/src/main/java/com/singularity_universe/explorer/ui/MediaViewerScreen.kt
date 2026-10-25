@@ -25,10 +25,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -120,6 +122,8 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
     // Downloading a streamed video before editing it.
     var preparingEdit by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    var deleteTarget by remember { mutableStateOf(false) }
+    val current = items[pagerState.currentPage]
     // A saved edit is a new or changed file: folder lists and Recents must show it; a remote file's
     // edit goes back to its server or device.
     val editor = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -207,7 +211,6 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
-            val current = items[pagerState.currentPage]
             TopAppBar(
                 title = {
                     Column {
@@ -261,6 +264,16 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                             Icon(Icons.Outlined.Edit, "Edit")
                         }
                     }
+                    IconButton(
+                        onClick = {
+                            // Other apps can't read files on a server or in Android/data: hand them a copy.
+                            if (remote) vm.openRestricted(current) { context.shareFiles(listOf(it)) }
+                            else context.shareFiles(listOf(current))
+                        },
+                    ) {
+                        Icon(Icons.Default.Share, "Share")
+                    }
+                    IconButton(onClick = { deleteTarget = true }) { Icon(Icons.Default.Delete, "Delete") }
                     OverflowMenu(onExpandedChange = { menuOpen = it }) {
                         item("Locate", Icons.Outlined.FolderOpen) { vm.locate(current) }
                         item("Copy to…", Icons.Outlined.ContentCopy) { vm.startTransfer(listOf(current.path), move = false) }
@@ -282,6 +295,19 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+
+    if (deleteTarget) {
+        DeleteDialog(
+            count = 1,
+            permanentCount = if (vm.repo.canTrash(current.path)) 0 else 1,
+            onDismiss = { deleteTarget = false },
+        ) {
+            vm.delete(listOf(current.path))
+            deleteTarget = false
+            // The file this page showed is gone; there's nothing left here to view.
+            vm.back()
         }
     }
 }

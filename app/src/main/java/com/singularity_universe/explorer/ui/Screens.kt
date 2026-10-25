@@ -93,7 +93,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 @Composable
-fun FolderScreen(vm: ExplorerViewModel, path: String, highlight: String? = null) {
+fun FolderScreen(vm: ExplorerViewModel, path: String, highlight: String? = null, onOpenDrawer: () -> Unit = {}) {
     // Breadcrumbs start at the storage root, or at "/" on an SSH server.
     val root = vm.breadcrumbRoot(path)
     val data = vm.folder(path).observe()
@@ -141,6 +141,7 @@ fun FolderScreen(vm: ExplorerViewModel, path: String, highlight: String? = null)
         },
         currentFolder = path,
         highlightPath = highlight,
+        onOpenDrawer = onOpenDrawer,
         header = {
             Column {
                 Breadcrumbs(vm, root, path)
@@ -257,7 +258,7 @@ private fun jumpTo(vm: ExplorerViewModel, path: String) {
 }
 
 @Composable
-fun CategoryScreen(vm: ExplorerViewModel, category: Category) {
+fun CategoryScreen(vm: ExplorerViewModel, category: Category, onOpenDrawer: () -> Unit = {}) {
     if (category == Category.Apps) {
         AppsScreen(vm)
         return
@@ -270,16 +271,18 @@ fun CategoryScreen(vm: ExplorerViewModel, category: Category) {
         refreshing = data.refreshing,
         onRefresh = data::refresh,
         emptyText = "No ${category.label.lowercase()} found",
+        onOpenDrawer = onOpenDrawer,
     )
 }
 
 @Composable
-fun RecentsScreen(vm: ExplorerViewModel) {
+fun RecentsScreen(vm: ExplorerViewModel, onOpenDrawer: () -> Unit = {}) {
     val data = vm.recents().observe()
     FileListScreen(
         vm, "Recents", data.value, "No recent files",
         sortable = false, refreshing = data.refreshing, onRefresh = data::refresh,
         sectionOf = { monthLabel(it.lastModified) },
+        onOpenDrawer = onOpenDrawer,
     )
 }
 
@@ -295,11 +298,12 @@ private fun monthLabel(millis: Long): String {
 }
 
 @Composable
-fun StarredScreen(vm: ExplorerViewModel) {
+fun StarredScreen(vm: ExplorerViewModel, onOpenDrawer: () -> Unit = {}) {
     val data = vm.starredFiles().observe()
     FileListScreen(
         vm, "Starred", data.value, "Star files to find them here quickly",
         refreshing = data.refreshing, onRefresh = data::refresh,
+        onOpenDrawer = onOpenDrawer,
     )
 }
 

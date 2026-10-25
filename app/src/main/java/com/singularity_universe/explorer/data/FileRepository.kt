@@ -128,8 +128,9 @@ class FileRepository(private val context: Context) {
         ),
         // Modified date, not date added: it's the date rows show and Recents groups by month.
         sort = "${FileColumns.DATE_MODIFIED} DESC",
-        limit = limit,
-    )
+        // Over-fetch so dropping folders (the Download/ branch matches subfolders too) still fills the list.
+        limit = limit * 2,
+    ).filterNot { it.isDirectory }.take(limit)
 
     suspend fun search(text: String, category: Category?): List<FileItem> {
         val (catSelection, catArgs) = category?.let { categorySelection(it) } ?: (null to emptyArray())
