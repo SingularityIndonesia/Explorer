@@ -46,15 +46,17 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.singularity_universe.explorer.data.Languages
 import com.singularity_universe.explorer.ui.TextEditorViewModel.SaveStatus
 import com.singularity_universe.explorer.ui.TextEditorViewModel.State
 
-/** Plain text editor: saves automatically, with undo/redo, and Prettify for JSON. */
+/** Text and code editor: colors code, saves automatically, with undo/redo, and Prettify for JSON. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TextEditorScreen(vm: TextEditorViewModel, onBack: () -> Unit) {
@@ -112,15 +114,20 @@ fun TextEditorScreen(vm: TextEditorViewModel, onBack: () -> Unit) {
                     textAlign = TextAlign.Center,
                     modifier = Modifier.align(Alignment.Center).padding(32.dp),
                 )
-                is State.Ready -> Editor(state.history)
+                is State.Ready -> Editor(state.history, vm.file.name)
             }
         }
     }
 }
 
 @Composable
-private fun Editor(history: EditHistory) {
+private fun Editor(history: EditHistory, name: String) {
     val focus = remember { FocusRequester() }
+    val palette = syntaxPalette()
+    val coloring = remember(name, palette) {
+        Languages.forFile(name, history.value.text.substringBefore('\n'))
+            ?.let { SyntaxTransformation(it, palette) } ?: VisualTransformation.None
+    }
     LaunchedEffect(Unit) { focus.requestFocus() }
     BasicTextField(
         value = history.value,
@@ -132,6 +139,7 @@ private fun Editor(history: EditHistory) {
             color = MaterialTheme.colorScheme.onSurface,
         ),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        visualTransformation = coloring,
         // Code and config files: no autocorrect or automatic capitals.
         keyboardOptions = KeyboardOptions(
             capitalization = KeyboardCapitalization.None,

@@ -9,6 +9,8 @@
             android:name="android.permission.QUERY_ALL_PACKAGES"
             tools:ignore="QueryAllPackagesPermission"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- Apps › Uninstall: without it, Android silently ignores the uninstall request. -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>
     <!-- Remote access: a socket to this phone's own Wireless debugging service (never the internet). -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Remote access pairing: the code is typed into a notification while Settings stays open. -->

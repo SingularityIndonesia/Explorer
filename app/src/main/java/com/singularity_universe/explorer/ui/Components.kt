@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.text.format.DateFormat
 import android.text.format.Formatter
+import android.util.LruCache
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -16,6 +17,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,8 +66,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,9 +78,15 @@ import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.singularity_universe.explorer.data.FileItem
 import com.singularity_universe.explorer.data.FileKind
+import com.singularity_universe.explorer.data.Languages
+import com.singularity_universe.explorer.data.highlight
+import com.singularity_universe.explorer.data.isText
+import com.singularity_universe.explorer.data.readTextSnippet
 import com.singularity_universe.explorer.data.thumbnail
 import java.io.File
 import java.util.Date
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // ---- Formatting ----
 
@@ -143,8 +155,18 @@ fun FileKind.icon(): ImageVector = when (this) {
 
 private val FileItem.hasPreview get() = kind == FileKind.Image || kind == FileKind.Video
 
+/**
+ * A file's icon, or a preview of it: pictures and videos everywhere, and with [showText] (tiles big
+ * enough to read) the first lines of text files and scripts.
+ */
 @Composable
-fun FileThumbnail(item: FileItem, modifier: Modifier = Modifier, iconSize: Int = 22, thumbnailPx: Int = 192) {
+fun FileThumbnail(
+    item: FileItem,
+    modifier: Modifier = Modifier,
+    iconSize: Int = 22,
+    thumbnailPx: Int = 192,
+    showText: Boolean = false,
+) {
     Box(
         modifier = modifier.background(MaterialTheme.colorScheme.secondaryContainer),
         contentAlignment = Alignment.Center,
@@ -170,9 +192,47 @@ fun FileThumbnail(item: FileItem, modifier: Modifier = Modifier, iconSize: Int =
                     modifier = Modifier.size((iconSize + 4).dp),
                 )
             }
+        } else if (showText && item.isText && item.size > 0) {
+            TextThumbnail(item)
         }
     }
 }
+
+/** First lines of a text file, colored when it's code, like a page seen from afar. */
+@Composable
+private fun TextThumbnail(item: FileItem) {
+    val palette = syntaxPalette()
+    val snippet by produceState<AnnotatedString?>(null, item.path, item.lastModified, palette) {
+        val key = "${item.path}:${item.lastModified}"
+        val text = snippets.get(key) ?: withContext(Dispatchers.IO) { readTextSnippet(item.file).orEmpty() }
+            .also { snippets.put(key, it) }
+        if (text.isEmpty()) return@produceState
+        val language = Languages.forFile(item.name, text.substringBefore('\n'))
+        value = language?.let { highlight(text, it).annotate(text, 0, palette) } ?: AnnotatedString(text)
+    }
+    val text = snippet ?: return
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        // About 26 columns fit across, whatever the tile's size.
+        val fontSize = with(LocalDensity.current) { (maxWidth / 15.6f).toSp() }
+        Text(
+            text,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = FontFamily.Monospace,
+            fontSize = fontSize,
+            lineHeight = fontSize * 1.25f,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
+            modifier = Modifier.padding(maxWidth * 0.08f),
+        )
+    }
+}
+
+/** Snippets already read, so scrolling back doesn't read the files again. Empty: nothing to show. */
+private val snippets = LruCache<String, String>(256)
 
 // ---- List & grid cells ----
 
@@ -265,7 +325,7 @@ fun FileGridCell(
                     }
                 ),
         ) {
-            FileThumbnail(item, Modifier.fillMaxSize(), iconSize = 36, thumbnailPx = 320)
+            FileThumbnail(item, Modifier.fillMaxSize(), iconSize = 36, thumbnailPx = 320, showText = true)
             if (selected) SelectedBadge(Modifier.align(Alignment.TopEnd).padding(6.dp))
             if (starred) {
                 Icon(

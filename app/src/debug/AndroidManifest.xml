@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: the in-app profiler (see build-logic/CallTracePlugin). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Opened from Settings › Developer, or the recording notification. -->
+        <activity
+                android:name=".profiler.ProfilerActivity"
+                android:exported="false"
+                android:label="Profiler"
+                android:theme="@style/Theme.Explorer"/>
+
+        <receiver
+                android:name=".profiler.ProfilerReceiver"
+                android:exported="false"/>
+
+        <!-- Created before the app's own code runs, so recording can cover launch. -->
+        <provider
+                android:name=".profiler.ProfilerStartup"
+                android:authorities="${applicationId}.profiler"
+                android:exported="false"
+                android:initOrder="1000"/>
+    </application>
+</manifest>

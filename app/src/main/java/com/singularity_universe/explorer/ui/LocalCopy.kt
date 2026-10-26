@@ -33,17 +33,18 @@ sealed interface LocalCopy {
 
 /**
  * The local file to show for [item]: the file itself, or (for servers, other devices and
- * Android/data) a cached copy downloaded when [enabled].
+ * Android/data) a cached copy downloaded when [enabled]. Bumping [refreshKey] re-downloads it even
+ * if a copy is already shown, for a user-requested refresh.
  */
 @Composable
-fun rememberLocalCopy(vm: ExplorerViewModel, item: FileItem, enabled: Boolean = true): LocalCopy {
+fun rememberLocalCopy(vm: ExplorerViewModel, item: FileItem, enabled: Boolean = true, refreshKey: Int = 0): LocalCopy {
     val remote = remember(item.path) { vm.repo.needsCopyToOpen(item.path) }
     var state by remember(item.path) { mutableStateOf<LocalCopy>(if (remote) LocalCopy.Loading(null) else LocalCopy.Ready(item.file)) }
-    LaunchedEffect(item.path, enabled) {
-        if (!remote || !enabled || state is LocalCopy.Ready) return@LaunchedEffect
+    LaunchedEffect(item.path, enabled, refreshKey) {
+        if (!remote || !enabled || (refreshKey == 0 && state is LocalCopy.Ready)) return@LaunchedEffect
         state = LocalCopy.Loading(null)
         state = try {
-            LocalCopy.Ready(vm.repo.cachedCopy(item) { progress -> state = LocalCopy.Loading(progress) })
+            LocalCopy.Ready(vm.repo.cachedCopy(item, force = refreshKey != 0) { progress -> state = LocalCopy.Loading(progress) })
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

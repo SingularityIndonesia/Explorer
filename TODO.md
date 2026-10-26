@@ -6,6 +6,8 @@ Nothing queued; see the sections below.
 
 ## Done
 
+- [x] Debug builds: in-app profiler (Settings › Developer: record switch and Open profiler): every app function is timed (calls, total/self/average/longest time, first/last call), a timeline of recent calls per thread, and memory (Java/native heap, PSS, GCs, heap dump); CSV export to Download/Explorer profiler.
+- [x] Code coloring in the text viewer and editor (about 35 languages, by extension, file name or `#!` line); grid tiles and Recents show the first lines of text files and scripts; scripts Android files under other types (.bat, .ps1) open as text.
 - [x] Archives: .tar (plain, gz, bz2, xz), .7z and .gz open like folders; password-protected zips (ZipCrypto/AES) and 7z ask for the password.
 - [x] Transfer progress in bytes (350 MB of 1.2 GB), Cancel stops mid-file and removes the partial copy, queued count shown.
 - [x] Editing files in Android/data (saved back over the phone's own Wireless debugging connection); the text editor pauses saving when the file changed elsewhere (Reload theirs / Keep mine).

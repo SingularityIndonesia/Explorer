@@ -9,6 +9,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -35,7 +37,9 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,6 +60,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -99,6 +104,7 @@ import com.singularity_universe.explorer.remote.SshConnections
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /** Full-screen viewer: swipe left/right through [items]; images are shown, videos play. */
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
@@ -121,6 +127,13 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
     var editVersion by remember { mutableIntStateOf(0) }
     // Downloading a streamed video before editing it.
     var preparingEdit by remember { mutableStateOf(false) }
+    // Bumped to re-download the current page's remote copy, for a user-requested refresh.
+    var refreshVersion by remember { mutableIntStateOf(0) }
+    // Paths whose next edit-prep download (see `copies` above) must bypass the cache: a streamed
+    // video isn't downloaded for viewing, but still is to edit it, so refreshing it has nothing to
+    // act on until Edit is tapped — this is what makes that next download a real refresh instead of
+    // reusing whatever got cached the last time it was edited.
+    val forceNextEditDownload = remember { mutableStateSetOf<String>() }
     val scope = rememberCoroutineScope()
     var deleteTarget by remember { mutableStateOf(false) }
     val current = items[pagerState.currentPage]
@@ -176,7 +189,7 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                     onHideControls = { chromeVisible = false },
                     streaming = true,
                 )
-            } else when (val copy = rememberLocalCopy(vm, item, enabled = load)) {
+            } else when (val copy = rememberLocalCopy(vm, item, enabled = load, refreshKey = if (isCurrent) refreshVersion else 0)) {
                 is LocalCopy.Ready -> {
                     val shown = if (copy.file.path == item.path) item else item.copy(path = copy.file.path, mediaUri = null)
                     if (shown !== item) SideEffect { copies[item.path] = copy.file }
@@ -249,8 +262,10 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                                     // A streamed video: the editor needs it on the phone.
                                     else -> scope.launch {
                                         preparingEdit = true
-                                        runCatching { vm.repo.cachedCopy(current) }
+                                        val force = current.path in forceNextEditDownload
+                                        runCatching { vm.repo.cachedCopy(current, force = force) }
                                             .onSuccess { file ->
+                                                forceNextEditDownload -= current.path
                                                 copies[current.path] = file
                                                 launch(file.path)
                                             }
@@ -263,6 +278,16 @@ fun MediaViewerScreen(vm: ExplorerViewModel, items: List<FileItem>, startIndex: 
                         ) {
                             Icon(Icons.Outlined.Edit, "Edit")
                         }
+                    }
+                    // A streamed video's playback always reads live, but Edit still downloads a copy
+                    // of it (below) that can go stale just like any other remote file's — so this
+                    // also invalidates that one, even though there's nothing to redraw here for it.
+                    if (remote) {
+                        IconButton(onClick = {
+                            refreshVersion++
+                            copies -= current.path
+                            forceNextEditDownload += current.path
+                        }) { Icon(Icons.Outlined.Refresh, "Refresh") }
                     }
                     IconButton(
                         onClick = {
@@ -373,6 +398,7 @@ private fun VideoPage(
             } else {
                 setMediaItem(MediaItem.fromUri(item.file.toURI().toString()))
             }
+            repeatMode = Player.REPEAT_MODE_ONE
             prepare()
             playWhenReady = true
         }
@@ -382,6 +408,8 @@ private fun VideoPage(
     var duration by remember { mutableLongStateOf(0L) }
     var seeking by remember { mutableStateOf(false) }
     var seekPosition by remember { mutableFloatStateOf(0f) }
+    var playbackSpeed by remember { mutableFloatStateOf(1f) }
+    var speedMenuOpen by remember { mutableStateOf(false) }
 
     DisposableEffect(player, lifecycleOwner) {
         val listener = object : Player.Listener {
@@ -408,8 +436,8 @@ private fun VideoPage(
         }
     }
     // Like most players, hide the controls a few seconds after playback starts.
-    LaunchedEffect(controlsVisible, isPlaying, holdControls) {
-        if (controlsVisible && isPlaying && !holdControls) {
+    LaunchedEffect(controlsVisible, isPlaying, holdControls, speedMenuOpen) {
+        if (controlsVisible && isPlaying && !holdControls && !speedMenuOpen) {
             delay(3000)
             onHideControls()
         }
@@ -466,16 +494,8 @@ private fun VideoPage(
             modifier = Modifier.align(Alignment.Center),
         ) {
             IconButton(
-                onClick = {
-                    when {
-                        player.isPlaying -> player.pause()
-                        player.playbackState == Player.STATE_ENDED -> {
-                            player.seekTo(0)
-                            player.play()
-                        }
-                        else -> player.play()
-                    }
-                },
+                // Looping (below), it never reaches STATE_ENDED, so pause/play is all this needs.
+                onClick = { if (player.isPlaying) player.pause() else player.play() },
                 modifier = Modifier.size(72.dp).background(Color.Black.copy(alpha = 0.45f), CircleShape),
             ) {
                 Icon(
@@ -522,9 +542,39 @@ private fun VideoPage(
                     modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
                 )
                 Text(formatTime(duration), color = Color.White, style = MaterialTheme.typography.labelMedium)
+                Box {
+                    Text(
+                        "${formatSpeed(playbackSpeed)}x",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .clickable { speedMenuOpen = true },
+                    )
+                    DropdownMenu(expanded = speedMenuOpen, onDismissRequest = { speedMenuOpen = false }) {
+                        Column(Modifier.width(220.dp).padding(horizontal = 16.dp, vertical = 4.dp)) {
+                            Text("Playback speed · ${formatSpeed(playbackSpeed)}x", style = MaterialTheme.typography.labelLarge)
+                            Slider(
+                                value = playbackSpeed,
+                                valueRange = 0.1f..2f,
+                                steps = 18, // 0.1 steps from 0.1 to 2.0
+                                onValueChange = {
+                                    playbackSpeed = it
+                                    player.setPlaybackSpeed(it)
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+/** "1x", "1.5x", "0.7x": trims the trailing zero a float's toString always has. */
+private fun formatSpeed(speed: Float): String {
+    val rounded = (speed * 10).roundToInt() / 10f
+    return if (rounded == rounded.toInt().toFloat()) rounded.toInt().toString() else rounded.toString()
 }
 
 private const val SEEK_STEP_MS = 5_000L

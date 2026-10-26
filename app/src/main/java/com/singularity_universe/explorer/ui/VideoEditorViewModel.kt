@@ -3,6 +3,8 @@ package com.singularity_universe.explorer.ui
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.RectF
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
@@ -55,6 +57,12 @@ class VideoEditorViewModel(app: Application, path: String) : AndroidViewModel(ap
 
     /** Frames along the video, for the trim strip. */
     val thumbnails = mutableStateListOf<Bitmap>()
+    private var thumbWidth = 1
+    private var thumbHeight = 1
+
+    /** One frame's length, from the video's frame rate (falls back to 30fps if it isn't known). */
+    var frameMs by mutableFloatStateOf(1000f / 30f)
+        private set
 
     var startMs by mutableLongStateOf(0L)
         private set
@@ -131,6 +139,7 @@ class VideoEditorViewModel(app: Application, path: String) : AndroidViewModel(ap
                         startMs = 0
                         endMs = duration
                         crop = RectF(0f, 0f, w.toFloat(), h.toFloat())
+                        frameMs = 1000f / frameRate()
                         state = State.Ready
                     }
                     loadThumbnails(retriever, duration, w, h)
@@ -143,14 +152,48 @@ class VideoEditorViewModel(app: Application, path: String) : AndroidViewModel(ap
     }
 
     private suspend fun loadThumbnails(retriever: MediaMetadataRetriever, duration: Long, w: Int, h: Int) {
-        val thumbHeight = 120
-        val thumbWidth = (thumbHeight * w / h.toFloat()).toInt().coerceAtLeast(1)
+        thumbHeight = 120
+        thumbWidth = (thumbHeight * w / h.toFloat()).toInt().coerceAtLeast(1)
         for (i in 0 until THUMBNAILS) {
             val timeUs = duration * 1000 * (2 * i + 1) / (2 * THUMBNAILS)
             val frame = runCatching {
                 retriever.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, thumbWidth, thumbHeight)
             }.getOrNull() ?: continue
             withContext(Dispatchers.Main) { thumbnails += frame }
+        }
+    }
+
+    /** The video's frame rate, or 30 if the container doesn't say. */
+    private fun frameRate(): Float {
+        val extractor = MediaExtractor()
+        return try {
+            extractor.setDataSource(file.path)
+            (0 until extractor.trackCount)
+                .map { extractor.getTrackFormat(it) }
+                .firstOrNull { it.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true }
+                ?.let { if (it.containsKey(MediaFormat.KEY_FRAME_RATE)) it.getInteger(MediaFormat.KEY_FRAME_RATE).toFloat() else null }
+                ?.takeIf { it > 0f } ?: 30f
+        } catch (e: Exception) {
+            30f
+        } finally {
+            extractor.release()
+        }
+    }
+
+    /**
+     * Individual frames [frameMs] apart, centered on [centerMs] — a close-up for frame-precise
+     * trimming, instead of the [thumbnails] sampled across the whole video.
+     */
+    suspend fun frameStrip(centerMs: Long, count: Int): List<Bitmap> = withContext(Dispatchers.IO) {
+        MediaMetadataRetriever().use { retriever ->
+            retriever.setDataSource(file.path)
+            val half = count / 2
+            (0 until count).mapNotNull { i ->
+                val t = (centerMs + (i - half) * frameMs).coerceIn(0f, durationMs.toFloat())
+                runCatching {
+                    retriever.getScaledFrameAtTime((t * 1000).toLong(), MediaMetadataRetriever.OPTION_CLOSEST, thumbWidth, thumbHeight)
+                }.getOrNull()
+            }
         }
     }
 

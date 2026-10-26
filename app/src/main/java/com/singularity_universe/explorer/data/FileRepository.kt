@@ -23,6 +23,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -40,6 +42,17 @@ class FileRepository(private val context: Context) {
     /** When false, MediaStore results skip dot-files and anything inside a dot-folder. */
     @Volatile
     var showHidden = false
+
+    private val prefs by lazy { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+
+    /**
+     * Cache kept per SSH server or Android device for downloaded file copies, configurable in
+     * Settings. Each server/device has its own budget, trimmed by dropping its least recently used
+     * copies first; files on this phone's own Android/data aren't affected.
+     */
+    var remoteCacheQuotaMb: Int
+        get() = prefs.getInt(KEY_REMOTE_CACHE_QUOTA_MB, DEFAULT_REMOTE_CACHE_QUOTA_MB)
+        set(value) = prefs.edit().putInt(KEY_REMOTE_CACHE_QUOTA_MB, value.coerceAtLeast(MIN_REMOTE_CACHE_QUOTA_MB)).apply()
 
     /** Set by the activity: reaches Android/data and Android/obb through Wireless debugging. */
     @Volatile
@@ -536,16 +549,96 @@ class FileRepository(private val context: Context) {
 
     /**
      * A local copy of a file on a server, another device or in Android/data, for the in-app
-     * viewers and editors. Downloaded once and reused while the remote file keeps the same size and
-     * date. [onProgress] gets 0..1 while downloading (from a background thread).
+     * viewers and editors, downloaded once and reused on later opens. [force] always re-downloads
+     * (a user-requested refresh). [onProgress] gets 0..1 while downloading (from a background thread).
+     *
+     * Calls for the same [FileItem.path] are serialized (the viewer and its Edit button can both ask
+     * for one around the same time, e.g. right after a refresh): the second call waits rather than
+     * racing the first one over the same cache folder, and then just reuses what it fetched.
      */
-    suspend fun cachedCopy(item: FileItem, onProgress: (Float) -> Unit = {}): File = withContext(Dispatchers.IO) {
-        val dir = File(remoteCacheDir(), sha1(item.path))
+    suspend fun cachedCopy(item: FileItem, force: Boolean = false, onProgress: (Float) -> Unit = {}): File =
+        withContext(Dispatchers.IO) {
+            cacheLockFor(item.path).withLock {
+                if (isRemote(item.path)) return@withLock remoteCachedCopy(item, force, onProgress)
+                // Android/data: on this phone already, so there's no server to check a hash against —
+                // same size and date is enough.
+                val dir = File(remoteCacheDir(), sha1(item.path))
+                val target = File(dir, item.name)
+                val upToDate = !force && target.exists() && target.length() == item.size &&
+                    (item.lastModified <= 0 || abs(target.lastModified() - item.lastModified) < 2_000)
+                if (upToDate) return@withLock target
+                dir.mkdirs()
+                downloadInto(dir, item, onProgress)
+                onProgress(1f)
+                trimRemoteCache(keep = dir)
+                target
+            }
+        }
+
+    private val cacheLocks = HashMap<String, Mutex>()
+
+    private fun cacheLockFor(path: String): Mutex = synchronized(cacheLocks) { cacheLocks.getOrPut(path) { Mutex() } }
+
+    /**
+     * A local copy of a file on an SSH server or Android device, kept valid by its content hash
+     * (computed on the server) rather than size/date, which some servers don't preserve exactly.
+     * A copy downloaded or confirmed in the last [REMOTE_CACHE_TRUST_WINDOW_MS] is reused without
+     * asking the server again, so opening the same file repeatedly is instant; after that it's worth
+     * one cheap hash check before trusting it further. A hash that no longer matches means the cache
+     * is thrown away immediately (not reused, not left around); so does a file that's gone from the
+     * server (it was deleted there since it was cached).
+     */
+    private suspend fun remoteCachedCopy(item: FileItem, force: Boolean, onProgress: (Float) -> Unit): File {
+        val serverDir = File(remoteCacheDir(), remoteServerBucket(item.path))
+        val dir = File(serverDir, sha1(item.path))
         val target = File(dir, item.name)
-        val upToDate = target.exists() && target.length() == item.size &&
-            (item.lastModified <= 0 || abs(target.lastModified() - item.lastModified) < 2_000)
-        if (upToDate) return@withContext target
+        val hashFile = File(dir, HASH_FILE_NAME)
+        val verifiedFile = File(dir, VERIFIED_FILE_NAME)
+
+        // A user-requested refresh invalidates whatever's cached outright, rather than trusting it
+        // until a fresh download happens to succeed.
+        if (force) dir.deleteRecursively()
+
+        if (!force && target.exists()) {
+            val verifiedAt = verifiedFile.takeIf { it.exists() }?.readText()?.toLongOrNull() ?: 0L
+            if (System.currentTimeMillis() - verifiedAt < REMOTE_CACHE_TRUST_WINDOW_MS) return target
+            val remoteHash = runCatching { remoteChecksum(item.path) }.getOrNull()
+            if (remoteHash == null) {
+                // No hash tool on that server/device (or it's briefly unreachable): fall back to the
+                // old quick check rather than redownloading every time.
+                val upToDate = target.length() == item.size &&
+                    (item.lastModified <= 0 || abs(target.lastModified() - item.lastModified) < 2_000)
+                if (upToDate) {
+                    verifiedFile.writeText(System.currentTimeMillis().toString())
+                    return target
+                }
+            } else if (remoteHash == hashFile.takeIf { it.exists() }?.readText()) {
+                verifiedFile.writeText(System.currentTimeMillis().toString())
+                return target
+            } else {
+                dir.deleteRecursively() // changed since it was cached: that copy is worthless now
+            }
+        }
+
         dir.mkdirs()
+        try {
+            downloadInto(dir, item, onProgress)
+        } catch (e: Exception) {
+            // The file may have been deleted on the server since it was listed or last cached:
+            // nothing here is worth keeping around either way.
+            if (looksLikeMissingRemoteFile(e)) dir.deleteRecursively()
+            throw e
+        }
+        runCatching { remoteChecksum(item.path) }.getOrNull()?.let { hashFile.writeText(it) } ?: hashFile.delete()
+        verifiedFile.writeText(System.currentTimeMillis().toString())
+        onProgress(1f)
+        trimServerCache(serverDir, keep = dir)
+        return target
+    }
+
+    /** Downloads [item] into [dir] beside its name, replacing whatever copy might already be there. */
+    private suspend fun downloadInto(dir: File, item: FileItem, onProgress: (Float) -> Unit) {
+        val target = File(dir, item.name)
         // Downloaded beside the target and renamed at the end: a broken download is never reused.
         val partial = File(dir, ".${item.name}.part")
         partial.delete()
@@ -565,9 +658,33 @@ class FileRepository(private val context: Context) {
         target.delete()
         if (!partial.renameTo(target)) throw IOException("Couldn't store the downloaded file")
         if (item.lastModified > 0) target.setLastModified(item.lastModified)
-        onProgress(1f)
-        trimRemoteCache(keep = dir)
-        target
+    }
+
+    private fun looksLikeMissingRemoteFile(e: Throwable): Boolean =
+        e.message?.contains("no such file", ignoreCase = true) == true
+
+    /** A quick content checksum of a file on a server or device, to verify a cached copy without downloading it again. */
+    private suspend fun remoteChecksum(path: String): String? = when {
+        isSsh(path) -> sshFiles().checksum(path)
+        isAdbDevice(path) -> adbFiles().checksum(path)
+        else -> null
+    }
+
+    /** The cache folder for an SSH server or Android device, so each gets its own quota. */
+    private fun remoteServerBucket(path: String): String = when {
+        isSsh(path) -> "ssh-${SshPath.parse(path)?.hostId}"
+        isAdbDevice(path) -> "adb-${AdbPath.parse(path)?.deviceId}"
+        else -> "other"
+    }
+
+    /** Frees a server's or device's whole cache right away, e.g. once it's removed in Settings. */
+    fun forgetRemoteCache(sshHostId: String? = null, adbDeviceId: String? = null) {
+        val bucket = when {
+            sshHostId != null -> "ssh-$sshHostId"
+            adbDeviceId != null -> "adb-$adbDeviceId"
+            else -> return
+        }
+        File(remoteCacheDir(), bucket).deleteRecursively()
     }
 
     /** Whether edits to a copy of [path] can be saved back there: servers, devices and Android/data. */
@@ -627,6 +744,20 @@ class FileRepository(private val context: Context) {
             keep.walkTopDown().filter { it.isFile }.sumOf { it.length() }
         for (dir in entries.sortedBy { it.lastModified() }) {
             if (total <= MAX_REMOTE_CACHE) break
+            total -= dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            dir.deleteRecursively()
+        }
+    }
+
+    /** Keeps an SSH server's or Android device's cache under [remoteCacheQuotaMb] (each has its own). */
+    private fun trimServerCache(serverDir: File, keep: File) {
+        val quota = remoteCacheQuotaMb.toLong() * 1024 * 1024
+        val entries = serverDir.listFiles()?.filter { it != keep } ?: return
+        fun recency(dir: File) = File(dir, VERIFIED_FILE_NAME).takeIf { it.exists() }?.lastModified() ?: dir.lastModified()
+        var total = entries.sumOf { dir -> dir.walkTopDown().filter { it.isFile }.sumOf { it.length() } } +
+            keep.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        for (dir in entries.sortedBy(::recency)) {
+            if (total <= quota) break
             total -= dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
             dir.deleteRecursively()
         }
@@ -714,12 +845,23 @@ class FileRepository(private val context: Context) {
     }
 
     private companion object {
-        /** Remote copies kept for previews; Android may also clear them when space runs low. */
+        /** Remote copies kept for Android/data previews; Android may also clear them when space runs low. */
         const val MAX_REMOTE_CACHE = 500L * 1024 * 1024
 
         const val LARGE_FILE = 100L * 1024 * 1024
         const val DUPLICATE_MIN = 100L * 1024
         const val OLD_DOWNLOAD_DAYS = 90
         const val PHOTO_REVIEW_LIMIT = 3_000
+
+        const val PREFS_NAME = "explorer"
+        const val KEY_REMOTE_CACHE_QUOTA_MB = "remote_cache_quota_mb"
+        const val DEFAULT_REMOTE_CACHE_QUOTA_MB = 1024 // 1 GB per SSH server or Android device
+        const val MIN_REMOTE_CACHE_QUOTA_MB = 64
+
+        /** How long a verified remote copy is trusted before asking the server again. */
+        const val REMOTE_CACHE_TRUST_WINDOW_MS = 60_000L
+
+        const val HASH_FILE_NAME = ".checksum"
+        const val VERIFIED_FILE_NAME = ".verified"
     }
 }

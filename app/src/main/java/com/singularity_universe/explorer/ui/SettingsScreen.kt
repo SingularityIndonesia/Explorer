@@ -22,9 +22,12 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FiberManualRecord
 import androidx.compose.material.icons.outlined.GppMaybe
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.PhonelinkLock
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -62,8 +65,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.singularity_universe.explorer.RemoteControlActivity
 import com.singularity_universe.explorer.SSHTerminalActivity
+import com.singularity_universe.explorer.profiler.ProfilerEntry
 import com.singularity_universe.explorer.remote.AdbDevice
 import com.singularity_universe.explorer.remote.AdbDevices
 import com.singularity_universe.explorer.remote.Endpoint
@@ -132,7 +137,10 @@ fun SettingsScreen(vm: ExplorerViewModel) {
                                     if (ssh.keys.isEmpty()) showKeys = true else installingOn = host
                                 }
                                 item("Forget server identity", Icons.Outlined.GppMaybe) { forgetting = host }
-                                item("Remove", Icons.Outlined.Delete) { ssh.remove(host.id) }
+                                item("Remove", Icons.Outlined.Delete) {
+                                    ssh.remove(host.id)
+                                    vm.repo.forgetRemoteCache(sshHostId = host.id)
+                                }
                             }
                         },
                         onClick = { vm.openServer(host.id) },
@@ -149,7 +157,10 @@ fun SettingsScreen(vm: ExplorerViewModel) {
                                     RemoteControlActivity.start(context, device.id)
                                 }
                                 item("Edit / pair", Icons.Outlined.Edit) { editingDevice = device }
-                                item("Remove", Icons.Outlined.Delete) { adb.remove(device.id) }
+                                item("Remove", Icons.Outlined.Delete) {
+                                    adb.remove(device.id)
+                                    vm.repo.forgetRemoteCache(adbDeviceId = device.id)
+                                }
                             }
                         },
                         onClick = { vm.openDevice(device.id) },
@@ -207,6 +218,64 @@ fun SettingsScreen(vm: ExplorerViewModel) {
                     trailing = { Switch(checked = vm.showHidden, onCheckedChange = vm::updateShowHidden) },
                     onClick = { vm.updateShowHidden(!vm.showHidden) },
                 )
+            }
+
+            Section("Remote files cache") {
+                var quotaMb by remember { mutableStateOf(vm.repo.remoteCacheQuotaMb) }
+                var picking by remember { mutableStateOf(false) }
+                SettingsRow(
+                    title = "Cache size per server",
+                    subtitle = "${quotaLabel(quotaMb)} kept for each SSH server or Android device, so reopening " +
+                        "the same file is instant — oldest files dropped first",
+                    leading = { Icon(Icons.Outlined.Storage, null) },
+                    trailing = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                    onClick = { picking = true },
+                )
+                if (picking) {
+                    CacheQuotaDialog(
+                        current = quotaMb,
+                        onDismiss = { picking = false },
+                        onPick = {
+                            quotaMb = it
+                            vm.repo.remoteCacheQuotaMb = it
+                            picking = false
+                        },
+                    )
+                }
+            }
+
+            // Debug builds only: the function-call profiler (src/debug/.../profiler).
+            if (ProfilerEntry.available) {
+                // Re-read on return: the recording notification can stop it meanwhile.
+                var recording by remember { mutableStateOf(ProfilerEntry.recording) }
+                LifecycleResumeEffect(Unit) {
+                    recording = ProfilerEntry.recording
+                    onPauseOrDispose { }
+                }
+                Section("Developer") {
+                    SettingsRow(
+                        title = "Record function calls",
+                        subtitle = "Times every function in the app while on; slows the app a little",
+                        leading = { Icon(Icons.Outlined.FiberManualRecord, null) },
+                        trailing = {
+                            Switch(checked = recording, onCheckedChange = {
+                                ProfilerEntry.setRecording(it)
+                                recording = it
+                            })
+                        },
+                        onClick = {
+                            ProfilerEntry.setRecording(!recording)
+                            recording = !recording
+                        },
+                    )
+                    SettingsRow(
+                        title = "Open profiler",
+                        subtitle = "Calls, timings, timeline and memory",
+                        leading = { Icon(Icons.Outlined.Speed, null) },
+                        trailing = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                        onClick = { ProfilerEntry.open(context) },
+                    )
+                }
             }
         }
     }
@@ -479,6 +548,32 @@ private fun AddressesField(value: String, onChange: (String) -> Unit) {
         modifier = Modifier.fillMaxWidth(),
     )
 }
+
+@Composable
+private fun CacheQuotaDialog(current: Int, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
+    val options = listOf(256, 512, 1024, 2048, 5120)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Cache size per server") },
+        text = {
+            Column {
+                options.forEach { mb ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { onPick(mb) },
+                    ) {
+                        RadioButton(selected = mb == current, onClick = { onPick(mb) })
+                        Text(quotaLabel(mb))
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+private fun quotaLabel(mb: Int): String = if (mb % 1024 == 0) "${mb / 1024} GB" else "$mb MB"
 
 /** After editing the address list, keep using the same address if it's still there. */
 private fun keepActive(oldHosts: List<String>, oldActive: Int, newHosts: List<String>): Int =

@@ -127,6 +127,7 @@ fun FileListScreen(
     var selected by remember { mutableStateOf(emptySet<String>()) }
     var showSort by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
+    var showDeleteFolder by remember { mutableStateOf(false) }
     var showNewFolder by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<FileItem?>(null) }
     var compressing by remember { mutableStateOf<List<FileItem>?>(null) }
@@ -232,6 +233,10 @@ fun FileListScreen(
                                     if (pinned) "Remove from drawer" else "Add to drawer",
                                     if (pinned) Icons.Outlined.BookmarkRemove else Icons.Outlined.BookmarkAdd,
                                 ) { vm.toggleShortcut(currentFolder) }
+                                // Not the storage root, or the top of a server or device.
+                                if (currentFolder != vm.breadcrumbRoot(currentFolder)) {
+                                    item("Delete folder", Icons.Default.Delete) { showDeleteFolder = true }
+                                }
                             }
                             if (!shown.isNullOrEmpty()) {
                                 item("Select all", Icons.Default.SelectAll) {
@@ -290,6 +295,17 @@ fun FileListScreen(
             vm.delete(selected)
             selected = emptySet()
             showDelete = false
+        }
+    }
+    if (showDeleteFolder && currentFolder != null) {
+        DeleteDialog(
+            count = 1,
+            permanentCount = if (vm.repo.canTrash(currentFolder)) 0 else 1,
+            onDismiss = { showDeleteFolder = false },
+        ) {
+            showDeleteFolder = false
+            vm.delete(listOf(currentFolder))
+            vm.back()
         }
     }
     if (showNewFolder && currentFolder != null) {

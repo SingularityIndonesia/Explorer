@@ -1,4 +1,6 @@
 pluginManagement {
+    // The debug-build function tracer (explorer.call-trace).
+    includeBuild("build-logic")
     repositories {
         google {
             content {

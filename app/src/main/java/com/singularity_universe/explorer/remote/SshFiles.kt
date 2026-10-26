@@ -139,6 +139,12 @@ class SshFiles(val connections: SshConnections) {
         return connections.sftp(at.hostId) { sftp, _ -> stat(sftp, at.path)?.let { "${it.size}:${it.mTime}" } }
     }
 
+    /** A quick content checksum of a file, computed on the server, to verify a cached copy without downloading it again. */
+    suspend fun checksum(path: String): String? {
+        val at = parse(path)
+        return connections.exec(at.hostId, RemoteCommands.checksum(at.path)).takeIf { it.ok }?.output?.let(RemoteCommands::parseChecksum)
+    }
+
     /** Saves a local file over [path] on the server (an edited copy going back). */
     suspend fun uploadTo(local: File, path: String) {
         val to = parse(path)

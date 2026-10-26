@@ -48,11 +48,16 @@ val TEXT_EXTENSIONS = setOf(
     "yml", "yaml", "toml", "ini", "cfg", "conf", "config", "properties", "prop", "env", "lock", "pro",
     "gitignore", "gitattributes", "gitmodules", "editorconfig", "dockerignore", "npmrc", "nvmrc",
     "sql", "graphql", "gql", "proto", "csv", "tsv", "srt", "vtt", "ass", "ssa", "sub", "plist", "rc",
+    "vbs", "zig", "nim", "tf", "hcl", "asm",
 )
 
 /** Plain text, source code, scripts, and data/markup formats shown by the in-app text viewer. */
 val FileItem.isText: Boolean
-    get() = !isDirectory && (mimeType.startsWith("text/") || mimeType in TEXT_MIMES)
+    get() = !isDirectory && (
+        mimeType.startsWith("text/") || mimeType in TEXT_MIMES ||
+            // Scripts Android files under another type (.bat as a program, .ps1 as unknown).
+            (kind == FileKind.Other && Languages.isCode(name))
+        )
 
 fun isJsonFile(name: String, mimeType: String): Boolean =
     mimeType == "application/json" || name.substringAfterLast('.', "").lowercase() in setOf("json", "geojson")
@@ -74,6 +79,25 @@ fun looksLikeText(file: File): Boolean {
     if (control * 100 > read) return false
     // The sample may end in the middle of a character: that alone doesn't make it binary.
     return decodeUtf8(head, 0, read, allowTruncatedEnd = true) != null
+}
+
+/**
+ * The first [maxLines] lines of a text file, for a thumbnail: tabs expanded, long lines cut. Null
+ * when the file can't be read here (servers, Android/data) or isn't text after all.
+ */
+fun readTextSnippet(file: File, maxLines: Int = 24, maxColumns: Int = 80): String? {
+    val head = ByteArray(4 * 1024)
+    val read = runCatching { file.inputStream().use { it.read(head) } }.getOrNull() ?: return null
+    if (read <= 0) return null
+    if ((0 until read).any { head[it] == 0.toByte() }) return null
+    val start = if (read >= 3 && head[0] == 0xEF.toByte() && head[1] == 0xBB.toByte() && head[2] == 0xBF.toByte()) 3 else 0
+    return String(head, start, read - start, Charsets.UTF_8)
+        .replace("\r\n", "\n")
+        .lineSequence()
+        .take(maxLines)
+        .joinToString("\n") { it.replace("\t", "    ").take(maxColumns) }
+        .trimEnd()
+        .ifEmpty { null }
 }
 
 /** A text file as loaded for viewing or editing. Line endings are always "\n" in [text]. */

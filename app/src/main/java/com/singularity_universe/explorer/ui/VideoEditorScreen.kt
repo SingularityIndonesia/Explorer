@@ -13,6 +13,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,6 +30,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,9 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -57,9 +59,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -82,9 +87,14 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Popup
 import java.io.File
+import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val VideoBackground = Color(0xFF0E0E0E)
 private val VideoPanel = Color(0xFF1C1C1C)
@@ -457,13 +467,48 @@ private fun ShapeRow(aspect: Float?, cropped: Boolean, onAspect: (Float?) -> Uni
     }
 }
 
-/** Frames along the video with a two-handled slider over them: the part between the handles is kept. */
-@OptIn(ExperimentalMaterial3Api::class)
+private enum class TrimHandle { Start, End }
+
+private const val HOLD_STILL_MS = 450L
+private const val ZOOM_FRAME_COUNT = 9
+private const val PRECISION_PX_PER_FRAME = 22f
+
+/**
+ * Frames along the video with two draggable trim handles over them: the part between them is kept.
+ * Holding either handle still for a moment switches it to frame-by-frame precision — a small drag
+ * then only nudges it by whole frames — with a zoomed-in strip of the nearby frames to line it up
+ * exactly; letting go (or starting to drag again) goes back to the coarse, whole-strip speed.
+ */
 @Composable
 private fun TrimStrip(vm: VideoEditorViewModel) {
     val duration = vm.durationMs.toFloat().coerceAtLeast(1f)
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+
+    var dragging by remember { mutableStateOf<TrimHandle?>(null) }
+    var precision by remember { mutableStateOf(false) }
+    var lastMoveAt by remember { mutableLongStateOf(0L) }
+    var handleX by remember { mutableFloatStateOf(0f) }
+    var zoomFrames by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
+    var zoomJob by remember { mutableStateOf<Job?>(null) }
+
+    fun requestZoom(centerMs: Long) {
+        zoomJob?.cancel()
+        zoomJob = scope.launch { zoomFrames = vm.frameStrip(centerMs, ZOOM_FRAME_COUNT) }
+    }
+
+    // Holding a handle still (no new drag events) for a moment switches it to frame precision.
+    LaunchedEffect(lastMoveAt, dragging) {
+        val handle = dragging ?: return@LaunchedEffect
+        delay(HOLD_STILL_MS)
+        if (dragging == handle && !precision) {
+            precision = true
+            requestZoom(if (handle == TrimHandle.Start) vm.startMs else vm.endMs)
+        }
+    }
+
     Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
-        Row(
+        BoxWithConstraints(
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 10.dp)
@@ -471,34 +516,157 @@ private fun TrimStrip(vm: VideoEditorViewModel) {
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color.DarkGray),
         ) {
-            vm.thumbnails.forEach { frame ->
+            val trackPx = with(density) { maxWidth.toPx() }
+            val startFrac = (vm.startMs / duration).coerceIn(0f, 1f)
+            val endFrac = (vm.endMs / duration).coerceIn(0f, 1f)
+
+            Row(Modifier.fillMaxSize()) {
+                vm.thumbnails.forEach { frame ->
+                    Image(
+                        frame.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                    )
+                }
+            }
+
+            // Dims the trimmed-out parts, left and right of the kept range.
+            Box(Modifier.width(with(density) { (startFrac * trackPx).toDp() }).fillMaxHeight().background(Color.Black.copy(alpha = 0.55f)))
+            Box(
+                Modifier
+                    .offset { IntOffset((endFrac * trackPx).roundToInt(), 0) }
+                    .width(with(density) { ((1f - endFrac) * trackPx).toDp() })
+                    .fillMaxHeight()
+                    .background(Color.Black.copy(alpha = 0.55f)),
+            )
+
+            // Where playback currently is within the kept range.
+            val played = (vm.positionMs / duration).coerceIn(0f, 1f)
+            Box(
+                Modifier
+                    .offset { IntOffset(played.times(trackPx).roundToInt(), 0) }
+                    .width(2.dp)
+                    .fillMaxHeight()
+                    .background(Color.White),
+            )
+
+            TrimHandleMark(startFrac, trackPx, active = dragging == TrimHandle.Start)
+            TrimHandleMark(endFrac, trackPx, active = dragging == TrimHandle.End)
+
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .pointerInput(vm.durationMs) {
+                        val hitRadius = 28.dp.toPx()
+                        val holdSlop = 6.dp.toPx()
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            val startPx = vm.startMs / duration * size.width
+                            val endPx = vm.endMs / duration * size.width
+                            val toStart = abs(down.position.x - startPx)
+                            val toEnd = abs(down.position.x - endPx)
+                            val handle = if (toStart <= toEnd) TrimHandle.Start else TrimHandle.End
+                            if (minOf(toStart, toEnd) > hitRadius) return@awaitEachGesture
+
+                            dragging = handle
+                            precision = false
+                            lastMoveAt = System.currentTimeMillis()
+                            handleX = down.position.x
+                            var stillOriginX = down.position.x
+                            var baseMs = (if (handle == TrimHandle.Start) vm.startMs else vm.endMs).toFloat()
+                            var baseX = down.position.x
+                            val minGapMs = minOf(500f, duration)
+
+                            fun apply(ms: Long) {
+                                when (handle) {
+                                    TrimHandle.Start -> vm.setRange(ms.coerceIn(0L, (vm.endMs - minGapMs).toLong()), vm.endMs)
+                                    TrimHandle.End -> vm.setRange(vm.startMs, ms.coerceIn((vm.startMs + minGapMs).toLong(), vm.durationMs))
+                                }
+                            }
+
+                            try {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    handleX = change.position.x
+
+                                    val wasPrecision = precision
+                                    val ms = if (precision) {
+                                        baseMs + (change.position.x - baseX) / PRECISION_PX_PER_FRAME * vm.frameMs
+                                    } else {
+                                        baseMs + (change.position.x - baseX) / size.width * duration
+                                    }
+                                    val snapped = if (precision) ((ms / vm.frameMs).roundToLong() * vm.frameMs).roundToLong() else ms.roundToLong()
+                                    apply(snapped)
+                                    // Just switched to precision: re-anchor so the small drag so far isn't replayed at frame scale.
+                                    if (precision && !wasPrecision) {
+                                        baseMs = (if (handle == TrimHandle.Start) vm.startMs else vm.endMs).toFloat()
+                                        baseX = change.position.x
+                                    } else if (precision) {
+                                        requestZoom(if (handle == TrimHandle.Start) vm.startMs else vm.endMs)
+                                    }
+                                    // Only real movement (not touch noise) resets the "holding still" timer.
+                                    if (abs(change.position.x - stillOriginX) > holdSlop) {
+                                        stillOriginX = change.position.x
+                                        lastMoveAt = System.currentTimeMillis()
+                                    }
+                                    change.consume()
+                                }
+                            } finally {
+                                dragging = null
+                                precision = false
+                                zoomFrames = emptyList()
+                            }
+                        }
+                    },
+            )
+
+            if (precision && zoomFrames.isNotEmpty()) {
+                ZoomFrameStrip(zoomFrames, handleX, density)
+            }
+        }
+    }
+}
+
+/** A trim handle: a thin bright bar with a small grip, brighter while it's the one being dragged. */
+@Composable
+private fun TrimHandleMark(fraction: Float, trackPx: Float, active: Boolean) {
+    Box(
+        Modifier
+            .offset { IntOffset((fraction * trackPx).roundToInt() - 3, 0) }
+            .width(6.dp)
+            .fillMaxHeight()
+            .background(if (active) Color.White else Color.White.copy(alpha = 0.85f), RoundedCornerShape(2.dp)),
+    )
+}
+
+/** A close-up of individual frames around a handle, shown while it's held in frame precision. */
+@Composable
+private fun ZoomFrameStrip(frames: List<Bitmap>, handleX: Float, density: androidx.compose.ui.unit.Density) {
+    val widthPx = with(density) { (frames.size * 36).dp.toPx() }
+    Popup(
+        alignment = Alignment.TopStart,
+        offset = IntOffset((handleX - widthPx / 2).roundToInt(), with(density) { (-72).dp.roundToPx() }),
+    ) {
+        Row(
+            Modifier
+                .background(Color.Black, RoundedCornerShape(8.dp))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            frames.forEachIndexed { index, frame ->
                 Image(
                     frame.asImageBitmap(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.weight(1f).height(48.dp),
+                    modifier = Modifier
+                        .size(32.dp, 44.dp)
+                        .border(if (index == frames.size / 2) 2.dp else 0.dp, Color.White),
                 )
             }
         }
-        RangeSlider(
-            value = vm.startMs.toFloat()..vm.endMs.toFloat(),
-            onValueChange = { range ->
-                // Keep at least half a second.
-                val minimum = minOf(500f, duration)
-                var start = range.start
-                var end = range.endInclusive
-                if (end - start < minimum) {
-                    if (start != vm.startMs.toFloat()) start = end - minimum else end = start + minimum
-                }
-                vm.setRange(start.coerceAtLeast(0f).toLong(), end.coerceAtMost(duration).toLong())
-            },
-            valueRange = 0f..duration,
-            colors = SliderDefaults.colors(
-                activeTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                inactiveTrackColor = Color.Black.copy(alpha = 0.55f),
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 

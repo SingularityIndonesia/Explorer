@@ -284,7 +284,7 @@ private fun RecentCard(
 ) {
     var menu by remember { mutableStateOf(false) }
     Box(modifier.clip(RoundedCornerShape(24.dp)).clickable(onClick = onOpen)) {
-        FileThumbnail(item, Modifier.fillMaxSize(), iconSize = 48, thumbnailPx = 512)
+        FileThumbnail(item, Modifier.fillMaxSize(), iconSize = 48, thumbnailPx = 512, showText = true)
         Box(
             Modifier
                 .fillMaxWidth()

@@ -3,6 +3,8 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    // Debug builds: times every function for the in-app profiler (src/debug/.../profiler).
+    id("explorer.call-trace")
 }
 
 /**

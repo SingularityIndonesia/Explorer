@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.storage.StorageManager
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -388,6 +390,8 @@ fun SearchScreen(vm: ExplorerViewModel) {
 private fun AppsScreen(vm: ExplorerViewModel) {
     val context = LocalContext.current
     val data = vm.apps().observe()
+    // Reload when the uninstall dialog closes, so a removed app leaves the list.
+    val uninstall = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { data.refresh() }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
@@ -444,7 +448,7 @@ private fun AppsScreen(vm: ExplorerViewModel) {
                         }
                         if (!app.isSystem) {
                             FilledTonalButton(onClick = {
-                                context.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.packageName}")))
+                                uninstall.launch(Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.packageName}")))
                             }) { Text("Uninstall") }
                         }
                     }

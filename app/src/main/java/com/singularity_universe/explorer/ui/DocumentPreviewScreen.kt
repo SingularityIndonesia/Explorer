@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -193,10 +195,11 @@ fun DocumentPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
     val context = LocalContext.current
     val kind = documentKindOf(item.name)
     // Documents on a server or device are downloaded first.
-    val copy = rememberLocalCopy(vm, item)
+    var refreshKey by remember { mutableIntStateOf(0) }
+    val copy = rememberLocalCopy(vm, item, refreshKey = refreshKey)
     val local = (copy as? LocalCopy.Ready)?.file
     val remote = vm.repo.needsCopyToOpen(item.path)
-    val result by produceState<Result<Loaded>?>(null, local) {
+    val result by produceState<Result<Loaded>?>(null, local, refreshKey) {
         if (local == null) return@produceState
         value = withContext(Dispatchers.IO) { runCatching { load(local, kind!!) } }
     }
@@ -219,6 +222,11 @@ fun DocumentPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
                     IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
+                    if (remote) {
+                        if (copy is LocalCopy.Loading && refreshKey != 0) {
+                            CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp)
+                        } else IconButton(onClick = { refreshKey++ }) { Icon(Icons.Outlined.Refresh, "Refresh") }
+                    }
                     OverflowMenu {
                         item("Open with", Icons.AutoMirrored.Outlined.OpenInNew) {
                             if (remote) vm.openRestricted(item) { context.openFile(it) } else context.openFile(item)

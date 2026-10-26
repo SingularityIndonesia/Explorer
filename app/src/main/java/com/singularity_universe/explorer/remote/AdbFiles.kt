@@ -97,6 +97,12 @@ class AdbFiles(val devices: AdbDevices) {
         return devices.exec(at.deviceId, "stat -c '%s:%Y' ${shellQuote(at.path)}").takeIf { it.ok }?.output?.trim()
     }
 
+    /** A quick content checksum of a file, computed on the device, to verify a cached copy without downloading it again. */
+    suspend fun checksum(path: String): String? {
+        val at = parse(path)
+        return devices.exec(at.deviceId, RemoteCommands.checksum(at.path)).takeIf { it.ok }?.output?.let(RemoteCommands::parseChecksum)
+    }
+
     /** Saves a local file over [path] on the device (an edited copy going back). */
     suspend fun uploadTo(local: File, path: String) {
         val to = parse(path)

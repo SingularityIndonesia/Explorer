@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -40,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,6 +59,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.singularity_universe.explorer.TextEditorActivity
 import com.singularity_universe.explorer.data.FileItem
+import com.singularity_universe.explorer.data.Languages
+import com.singularity_universe.explorer.data.SyntaxSpans
+import com.singularity_universe.explorer.data.highlight
 import com.singularity_universe.explorer.data.MAX_EDIT_BYTES
 import com.singularity_universe.explorer.data.MAX_PREVIEW_BYTES
 import com.singularity_universe.explorer.data.TextContent
@@ -63,7 +69,7 @@ import com.singularity_universe.explorer.data.readTextFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Read-only view of a text or script file, with line numbers; Edit opens [TextEditorActivity]. */
+/** Read-only view of a text or script file, with line numbers and code colored; Edit opens [TextEditorActivity]. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TextPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
@@ -72,7 +78,8 @@ fun TextPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
     var error by remember { mutableStateOf<String?>(null) }
 
     // A file on a server or device is downloaded once; the editor then works on that copy.
-    val copy = rememberLocalCopy(vm, item)
+    var refreshKey by remember { mutableIntStateOf(0) }
+    val copy = rememberLocalCopy(vm, item, refreshKey = refreshKey)
     val local = (copy as? LocalCopy.Ready)?.file
     val remote = vm.repo.needsCopyToOpen(item.path)
 
@@ -82,7 +89,7 @@ fun TextPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
         loads++
         onPauseOrDispose { }
     }
-    LaunchedEffect(loads, local) {
+    LaunchedEffect(loads, local, refreshKey) {
         if (loads == 0 || local == null) return@LaunchedEffect
         withContext(Dispatchers.IO) { runCatching { readTextFile(local) } }
             .onSuccess { loaded ->
@@ -114,6 +121,11 @@ fun TextPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
                     IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
+                    if (remote) {
+                        if (copy is LocalCopy.Loading && refreshKey != 0) {
+                            CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp)
+                        } else IconButton(onClick = { refreshKey++ }) { Icon(Icons.Outlined.Refresh, "Refresh") }
+                    }
                     OverflowMenu {
                         item("Locate", Icons.Outlined.FolderOpen) { vm.locate(item) }
                         item("Copy to…", Icons.Outlined.ContentCopy) { vm.startTransfer(listOf(item.path), move = false) }
@@ -150,7 +162,7 @@ fun TextPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
         Box(Modifier.fillMaxSize().padding(padding)) {
             val loaded = content
             when {
-                loaded != null -> TextLines(loaded)
+                loaded != null -> TextLines(loaded, item.name)
                 copy !is LocalCopy.Ready -> Box(Modifier.align(Alignment.Center)) { LocalCopyStatus(copy, item) }
                 error != null -> CenteredMessage(error!!)
                 else -> CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -160,7 +172,7 @@ fun TextPreviewScreen(vm: ExplorerViewModel, item: FileItem) {
 }
 
 @Composable
-private fun TextLines(content: TextContent) {
+private fun TextLines(content: TextContent, name: String) {
     if (content.text.isEmpty() && content.utf8) {
         CenteredMessage("This file is empty")
         return
@@ -168,6 +180,12 @@ private fun TextLines(content: TextContent) {
     // Very long lines (minified files) are cut into chunks, so the list never lays out megabytes at once.
     val rows = remember(content) { previewRows(content.text) }
     val lineCount = rows.lastOrNull()?.number ?: 0
+    // Colored off the main thread; the text shows plain until then.
+    val spans by produceState(SyntaxSpans.EMPTY, content, name) {
+        val language = Languages.forFile(name, content.text.substringBefore('\n'))
+        if (language != null) value = withContext(Dispatchers.Default) { highlight(content.text, language) }
+    }
+    val palette = syntaxPalette()
 
     val codeStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp)
     val numberStyle = codeStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
@@ -207,7 +225,10 @@ private fun TextLines(content: TextContent) {
                         )
                     }
                     Spacer(Modifier.width(12.dp))
-                    Text(row.text, style = codeStyle.copy(color = MaterialTheme.colorScheme.onSurface))
+                    Text(
+                        remember(row, spans, palette) { spans.annotate(row.text, row.start, palette) },
+                        style = codeStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+                    )
                 }
             }
         }
@@ -221,18 +242,25 @@ private fun CenteredMessage(text: String) {
     }
 }
 
-/** One row of the preview: a line, or a chunk of a very long line ([continued] after the first). */
-private class PreviewRow(val number: Int, val text: String, val continued: Boolean)
+/**
+ * One row of the preview: a line, or a chunk of a very long line ([continued] after the first).
+ * [start] is where it begins in the whole text.
+ */
+private class PreviewRow(val number: Int, val text: String, val start: Int, val continued: Boolean)
 
 private fun previewRows(text: String): List<PreviewRow> {
     val lines = text.split('\n').let { if (text.endsWith('\n')) it.dropLast(1) else it }
     val rows = ArrayList<PreviewRow>(lines.size)
+    var start = 0
     lines.forEachIndexed { index, line ->
         if (line.length <= CHUNK) {
-            rows += PreviewRow(index + 1, line, continued = false)
+            rows += PreviewRow(index + 1, line, start, continued = false)
         } else {
-            line.chunked(CHUNK).forEachIndexed { part, chunk -> rows += PreviewRow(index + 1, chunk, continued = part > 0) }
+            line.chunked(CHUNK).forEachIndexed { part, chunk ->
+                rows += PreviewRow(index + 1, chunk, start + part * CHUNK, continued = part > 0)
+            }
         }
+        start += line.length + 1
     }
     return rows
 }

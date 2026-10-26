@@ -20,4 +20,17 @@ object RemoteCommands {
 
     /** The file name a [compress] command reports, or null if it failed. */
     fun created(output: String): String? = output.lineSequence().lastOrNull { it.startsWith("CREATED:") }?.removePrefix("CREATED:")
+
+    /**
+     * A content checksum for [path], from whichever hash tool is installed. It's only ever compared
+     * against this same host's own past output, so it doesn't matter which tool ran or what format
+     * its digest is in — only that the same one keeps being picked for as long as it's installed.
+     */
+    fun checksum(path: String): String {
+        val q = shellQuote(path)
+        return "sha256sum -- $q 2>/dev/null || shasum -a 256 -- $q 2>/dev/null || md5sum -- $q 2>/dev/null || cksum -- $q"
+    }
+
+    /** The digest out of a [checksum] command's output (its first field). */
+    fun parseChecksum(output: String): String? = output.trim().substringBefore(' ').takeIf { it.isNotEmpty() }
 }
